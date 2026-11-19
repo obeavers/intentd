@@ -118,6 +118,8 @@ pub const TRANSFER_TABLES: &[(&str, &str)] = &[
 /// new table cannot silently skip the transfer decision.
 #[cfg(test)]
 pub(crate) const TRANSFER_EXCLUDED_TABLES: &[(&str, &str)] = &[
+    ("work_t1_evidence", "original local task/source receipts and immutable evidence; never imported authority"),
+    ("work_t1_agent_fence", "local assignment/status ABA counters; never imported authority"),
     ("discussion_agent_grant", "local explicit addressing authority is never restored on import"),
     ("discussion_agent_activity", "local invocation receipts are not restored on import"),
     ("discussion_agent_delivery", "pending addressed messages must not replay on a destination"),

@@ -44,6 +44,7 @@ mod repositories;
 mod script_monitors;
 mod scripts;
 mod settings;
+pub(crate) mod tracer_evidence;
 mod usage_metrics;
 mod workspaces;
 

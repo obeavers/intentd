@@ -2278,6 +2278,7 @@ async fn task_metadata_round_trip_and_list_tasks() {
         status: TaskStatus::ReviewRequired,
         assigned_agent_ids: vec![AgentId::from("agent-1"), AgentId::from("agent-2")],
         acceptance_criteria: vec!["builds".to_string(), "tests pass".to_string()],
+        work_definition: None,
         estimated_effort: Some("M".to_string()),
         actual_effort: None,
         blocked_reason: None,
