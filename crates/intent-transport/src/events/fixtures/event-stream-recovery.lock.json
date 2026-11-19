@@ -2,6 +2,6 @@
   "lockVersion": 1,
   "sourceRepository": "intent-hq/intent",
   "sourcePath": "docs/protocol/fixtures/event-stream-recovery/contract.json",
-  "sourceCommit": "5edc385ea032d1a2d58f636a6e124cec2f8b59cc",
-  "fileSha256": "972219db1abdff8b90e62800ab50b2806c8701c382569fdc556f7fbe022435a9"
+  "sourceCommit": "ae48c76413d68e8c63a3e517e2be23b50453dd1c",
+  "fileSha256": "e678bb353a5430a4b157ed90c4eca3083a7c35206679e06b58376428f45ca32b"
 }
