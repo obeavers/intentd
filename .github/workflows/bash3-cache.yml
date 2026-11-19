@@ -27,4 +27,4 @@ permissions:
 
 jobs:
   fill:
-    uses: intent-hq/intent/.github/workflows/bash3-cache.yml@main
+    uses: obeavers/intent/.github/workflows/bash3-cache.yml@main

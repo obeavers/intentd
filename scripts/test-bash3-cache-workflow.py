@@ -32,12 +32,12 @@ class Bash3CacheWorkflow(unittest.TestCase):
         jobs = self.text.split('\njobs:\n', 1)[1]
         self.assertEqual(jobs.strip().splitlines(), [
             'fill:',
-            '    uses: intent-hq/intent/.github/workflows/bash3-cache.yml@main',
+            '    uses: obeavers/intent/.github/workflows/bash3-cache.yml@main',
         ])
 
     def test_the_reader_is_the_same_monorepo_ref(self):
         ci = (WORKFLOWS / 'ci.yml').read_text()
-        self.assertIn('    uses: intent-hq/intent/.github/workflows/consumer-checks.yml@main\n', ci)
+        self.assertIn('    uses: obeavers/intent/.github/workflows/consumer-checks.yml@main\n', ci)
 
 
 if __name__ == '__main__':

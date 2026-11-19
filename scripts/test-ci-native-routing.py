@@ -1388,7 +1388,7 @@ class NativeRoutingTests(unittest.TestCase):
         # first (the documented fix order) stay invisible until a hand bump
         # (intentd#2476, #2481). @main resolves the monorepo tip per run.
         caller = self.workflow["jobs"]["monorepo-consumer-checks"]
-        self.assertEqual(caller["uses"], "intent-hq/intent/.github/workflows/consumer-checks.yml@main")
+        self.assertEqual(caller["uses"], "obeavers/intent/.github/workflows/consumer-checks.yml@main")
 
     def test_consumer_caller_passes_the_self_hosted_cache_token(self):
         caller = self.workflow["jobs"]["monorepo-consumer-checks"]
