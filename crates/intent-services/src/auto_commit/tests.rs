@@ -1,5 +1,7 @@
 //! Tests for the LNI-1 auto-commit-on-idle subscriber.
 
+mod original_recording;
+
 use std::path::PathBuf;
 
 use git2::{Repository, Signature};

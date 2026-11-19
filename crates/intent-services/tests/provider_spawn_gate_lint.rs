@@ -71,6 +71,10 @@ const SITES: &[(&str, Spawn)] = &[
     ),
     ("agent_ops.rs", Spawn::Provider(&[MODELS])),
     (
+        "atomic_tracer/fixture.rs",
+        Spawn::Other("the developer tracer's fixed Node test, never a provider run"),
+    ),
+    (
         "agy_cli.rs",
         Spawn::Provider(&[DISCOVERY, REPORT, STATUSES]),
     ),

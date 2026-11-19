@@ -817,6 +817,7 @@ pub(crate) struct AgentCreatePlan {
     pub(crate) method: &'static str,
     pub(crate) parent_agent_id: Option<AgentId>,
     pub(crate) task_note_id: Option<NoteId>,
+    pub(crate) expected_task_revision: Option<intent_core::work_evidence::TaskRevisionRef>,
     pub(crate) skip_auto_commit: bool,
     pub(crate) name: String,
     pub(crate) name_explicitly_set: bool,
@@ -6949,6 +6950,7 @@ impl Services {
         // `workspace_path`; `agent_type` and `workspace_context` remain deferred.
         let AgentCreateExtra {
             remember_specialist,
+            expected_task_revision,
             provider,
             reasoning_effort,
             agent_type: _,
@@ -7078,6 +7080,7 @@ impl Services {
             parent_agent_id,
             task_note_id,
             skip_auto_commit,
+            expected_task_revision,
             name,
             name_explicitly_set,
             specialist,
@@ -7132,6 +7135,7 @@ impl Services {
             method,
             parent_agent_id,
             task_note_id,
+            expected_task_revision,
             skip_auto_commit,
             name,
             name_explicitly_set,
@@ -7391,14 +7395,26 @@ impl Services {
         // The legacy per-session taskGraph pin (0095) keeps being written for
         // fallback reads; its value equals the snapshot's `taskGraph`.
         let task_graph_enabled = settings.agent_features.task_graph;
-        self.store
-            .insert_agent_session_with_preferences(
-                &session,
-                task_graph_enabled,
-                remember_specialist,
-            )
-            .await
-            .map_err(AgentPersistError::store)?;
+        if let Some(expected) = &expected_task_revision {
+            self.store
+                .insert_agent_session_for_confirmed_plan(
+                    &session,
+                    task_graph_enabled,
+                    remember_specialist,
+                    expected,
+                )
+                .await
+                .map_err(AgentPersistError::store)?;
+        } else {
+            self.store
+                .insert_agent_session_with_preferences(
+                    &session,
+                    task_graph_enabled,
+                    remember_specialist,
+                )
+                .await
+                .map_err(AgentPersistError::store)?;
+        }
         self.invalidate_agent_list_cache(&session.workspace_id);
         // Global usage-stats (D2): count this session start in the current UTC
         // hour bucket under the session's stats model key (normalized model,
@@ -14185,6 +14201,7 @@ impl Services {
             }
         }
         let extra = AgentCreateExtra {
+            expected_task_revision: None,
             remember_specialist: false,
             provider: delegate_provider,
             reasoning_effort,
@@ -17677,6 +17694,7 @@ impl Services {
             agent_type.clone(),
         );
         let extra = AgentCreateExtra {
+            expected_task_revision: None,
             remember_specialist: false,
             provider,
             reasoning_effort,

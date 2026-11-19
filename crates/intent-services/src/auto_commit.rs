@@ -30,6 +30,8 @@ use crate::events::SubscriptionFilter;
 use crate::instructions::get_instruction_with_common_for;
 use crate::Services;
 
+pub(crate) mod recording;
+
 /// Subject-line cap for auto-commit fallback messages (TS
 /// `agent-commit.service.ts::buildCommitMessage`).
 const SUBJECT_MAX_CHARS: usize = 72;
@@ -241,6 +243,12 @@ impl Services {
     /// One-shot handler for a single `agent:idle` event. Logs and swallows
     /// every error so a single malformed event never tears down the worker.
     pub(crate) async fn handle_agent_idle_auto_commit(&self, event: &Event) {
+        if event.event_type == AGENT_IDLE {
+            self.handle_idle_record_with_original(event).await;
+        }
+    }
+
+    async fn handle_agent_idle_auto_commit_unbound(&self, event: &Event) {
         if event.event_type != AGENT_IDLE {
             return;
         }
@@ -332,7 +340,11 @@ impl Services {
             return;
         }
 
-        let linked_note_id = session.task_note_id.clone();
+        let original = recording::current();
+        let linked_note_id = original.as_ref().map_or_else(
+            || session.task_note_id.clone(),
+            |entry| Some(entry.source.binding.admission.note_id.clone()),
+        );
         // Attempt LLM generation; fall back to deterministic subject on any failure.
         let message = if let Some(msg) = self
             .generate_auto_commit_message(&worktree_path, &session, linked_note_id.as_ref())
@@ -345,8 +357,12 @@ impl Services {
                 workspace = %session.workspace_id.0,
                 "auto-commit using fallback subject"
             );
-            self.build_auto_commit_subject(&session, linked_note_id.as_ref())
-                .await
+            if let Some(original) = &original {
+                normalize_subject(&original.source.task_title)
+            } else {
+                self.build_auto_commit_subject(&session, linked_note_id.as_ref())
+                    .await
+            }
         };
 
         match self
@@ -383,6 +399,9 @@ impl Services {
                 );
             }
             Err(e) => {
+                if let Some(original) = recording::current() {
+                    original.note_post_effect_error(&e.to_string());
+                }
                 tracing::warn!(
                     agent = %agent_id.0,
                     workspace = %session.workspace_id.0,
@@ -501,7 +520,9 @@ impl Services {
             .flatten();
 
         // Task title (if linked).
-        let task_title = if let Some(note_id) = linked_note_id {
+        let task_title = if let Some(original) = recording::current() {
+            Some(original.source.task_title.clone())
+        } else if let Some(note_id) = linked_note_id {
             self.store()
                 .get_note(&session.workspace_id, note_id)
                 .await
