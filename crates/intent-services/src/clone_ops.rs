@@ -286,7 +286,7 @@ fn build_clone_command(
 #[derive(Clone)]
 enum ProgressSink {
     Legacy {
-        bus: EventBus,
+        bus: Box<EventBus>,
         ws: WorkspaceId,
         request_id: String,
     },
@@ -358,7 +358,7 @@ async fn run_clone(job: CloneJob) -> std::result::Result<(), CloneFailure> {
     let sink = match progress {
         Some(reporter) => ProgressSink::Create(reporter),
         None => ProgressSink::Legacy {
-            bus,
+            bus: Box::new(bus),
             ws,
             request_id,
         },
