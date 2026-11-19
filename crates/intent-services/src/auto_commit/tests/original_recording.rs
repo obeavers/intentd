@@ -252,7 +252,7 @@ async fn identical_idle_envelopes_from_different_attempts_are_refused_and_remain
     };
     scope(&next, async { svc.capture_original_idle_record(&envelope) }).await;
     scope(&original, async {
-        svc.capture_original_idle_record(&envelope)
+        svc.capture_original_idle_record(&envelope);
     })
     .await;
     let before = head(&repo);

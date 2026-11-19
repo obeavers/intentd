@@ -194,6 +194,7 @@ impl AgentManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent_manager::SlotClaimLoss;
     use intent_core::{AgentSession, Workspace};
 
     async fn taskless_manager() -> (
@@ -242,7 +243,10 @@ mod tests {
     fn claim(manager: &AgentManager, workspace: &WorkspaceId, agent: &AgentId) -> TurnAdmission {
         match manager.claim_slot_sync(agent, workspace, || Ok::<(), std::convert::Infallible>(())) {
             Ok(((), admission)) => admission,
-            Err(_) => panic!("fresh test admission must be available"),
+            Err(SlotClaimLoss::Busy | SlotClaimLoss::ReapClaimed) => {
+                panic!("fresh test admission must be available")
+            }
+            Err(SlotClaimLoss::Refused(never)) => match never {},
         }
     }
 
