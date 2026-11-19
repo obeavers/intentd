@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.252] - 2026-11-19
+
+### 📚 Documentation
+
+- Note Intent OS in-app web links in the app guide ([#3541](https://github.com/intent-hq/intentd/pull/3541))
+
+
+## [0.11.251] - 2026-11-19
+
+### 🐛 Bug Fixes
+
+- *(store)* Share per-tenant process state across Postgres opens ([#3533](https://github.com/intent-hq/intentd/pull/3533))
+- *(store)* Stop one tenant's writers from starving the shared Postgres pool ([#3531](https://github.com/intent-hq/intentd/pull/3531))
+
+### 📚 Documentation
+
+- Describe the recent-agent switcher in the assistant app guide ([#3538](https://github.com/intent-hq/intentd/pull/3538))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(deps)* Inherit internal crates from workspace dependencies ([#3534](https://github.com/intent-hq/intentd/pull/3534))
+
+
+## [0.11.250] - 2026-11-19
+
+### 🐛 Bug Fixes
+
+- *(clone)* Run clone and repo-cache git with English messages ([#3528](https://github.com/intent-hq/intentd/pull/3528))
+
+### 📚 Documentation
+
+- *(guide)* Describe the hidden single-machine rail ([#3532](https://github.com/intent-hq/intentd/pull/3532))
+
+### 🧪 Testing
+
+- *(store)* Find Postgres SQL by use and make the parsed tenant rule the only one ([#3527](https://github.com/intent-hq/intentd/pull/3527))
+- *(store)* Add a concurrency suite for the Postgres tenant writer lock ([#3529](https://github.com/intent-hq/intentd/pull/3529))
+
+
 ## [0.11.249] - 2026-11-19
 
 ### 🚀 Features

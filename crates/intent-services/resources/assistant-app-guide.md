@@ -414,7 +414,7 @@ enabled provider/model. New agents and quick actions cannot run on a disabled
 provider; update their saved selections or re-enable it. Intent does not choose an
 arbitrary replacement for a disabled app default.
 
-<!-- Sources: packages/cloudlands-fe/src/features/onboarding/messages/{ProviderCard,ProviderTerminalButton}.svelte; packages/cloudlands-fe/src/features/providers/utils/provider-install-commands.ts; packages/cloudlands-fe/src/store/renderer/slices/agent-availability/sagas/provider-availability-saga.ts; packages/cloudlands-fe/src/features/terminal/TerminalAdapter.ts (handleLinkClick). -->
+<!-- Sources: packages/cloudlands-fe/src/features/onboarding/messages/{ProviderCard,ProviderTerminalButton}.svelte; packages/cloudlands-fe/src/features/providers/utils/provider-install-commands.ts; packages/cloudlands-fe/src/store/renderer/slices/agent-availability/sagas/provider-availability-saga.ts; packages/cloudlands-fe/src/features/terminal/TerminalAdapter.ts (handleLinkClick); packages/cloudlands-fe/src/main/open-external.ts (Intent OS in-app links). -->
 In onboarding, a card that is not installed shows **Install** when Intent knows the
 provider's install command, and a card that needs sign-in shows **Log in** for Claude
 Code or a provider whose catalog lists a login command. These buttons run that command
@@ -424,6 +424,12 @@ from the card, to run the command in a terminal. Pending frontend release: a sig
 link clicked in that drawer opens in the system browser (in current builds the click
 does nothing; open the link from a workspace terminal instead, which uses Intent's
 browser panel).
+
+Pending frontend release: on Intent OS, which has no system browser, every web link
+Intent would send to the system browser (sign-in and help links, "open externally",
+links from the terminal drawer) opens in a browser panel of the workspace shown in the
+current window instead. With no workspace open, it opens in a small sign-in window.
+Other link types, such as `mailto:`, are unchanged.
 
 <!-- Auggie visibility: packages/cloudlands-fe/src/shared/provider-visibility.ts; packages/cloudlands-fe/src/features/onboarding/messages/AgentGrid.svelte; packages/cloudlands-fe/src/store/renderer/slices/provider-catalog/workspace-catalog-selectors.ts. -->
 Auggie appears in provider lists, including onboarding, only when its CLI is
@@ -998,6 +1004,25 @@ drawer terminals instead. From **Home**, next opens the first workspace tab and
 previous opens the last, regardless of which workspace was selected before
 Home. With no open workspace tabs, these shortcuts do nothing. Customize them in
 **Settings → Input and shortcuts → Keyboard shortcuts**.
+
+<!-- Sources (paths relative to packages/cloudlands-fe): src/features/recent-agents/RecentAgentSwitcher.svelte; src/features/recent-agents/RecentAgentCard.svelte; src/features/recent-agents/main/recent-agents.ipc.ts; src/shared/recent-agents.ts; src/shared/keyboard-shortcut-bindings.ts; src/store/renderer/slices/recent-agents/sagas/recent-agents-saga.ts. -->
+
+Pending frontend release (not in current builds): to jump between agents, hold
+**Option+Tab** on macOS or **Super+Tab** on Linux
+(on Intent OS the Mac Command key is Super). Windows has no default because it
+owns Alt+Tab and Win+Tab; bind one in settings. Intent shows the agents the user
+opened on this device, newest first, across every machine. A quick press and
+release returns to the previous agent. While holding the modifier, press Tab
+again to move (Shift moves back), release to open the selected agent, or press
+Esc to cancel. Each card shows the agent, its workspace, its machine and when it
+was opened; agents on the window's own machine also show whether they are
+working or need attention. A dimmed card is on a machine that is not connected:
+choosing it connects, opens that machine's window and then the agent. The list
+keeps the 30 most recent agents, is shared by every window, is not synced to
+other devices, and drops agents of a forgotten machine or of a deleted or
+archived workspace. It works in the composer, terminals and the browser panel.
+Rebind it as **Switch to Recent Agent** in **Settings → Input and shortcuts →
+Keyboard shortcuts**.
 
 <!-- Labs (tab groups): describe only when explicitly asked about tab groups or
 when developing or testing them, and say they are Labs. Enable Tab groups in
