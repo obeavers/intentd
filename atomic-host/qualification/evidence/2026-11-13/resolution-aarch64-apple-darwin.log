@@ -1,0 +1,15 @@
+error: failed to select a version for `libsqlite3-sys`.
+    ... required by package `rusqlite v0.32.1`
+    ... which satisfies dependency `rusqlite = "^0.32"` of package `atomic-agent v0.22.1 (/Users/oliverbeavers/CodeRepositories/atomic-src/atomic/atomic-agent)`
+    ... which satisfies path dependency `atomic-agent` of package `libatomic v0.22.1 (/Users/oliverbeavers/CodeRepositories/atomic-src/atomic/libatomic)`
+    ... which satisfies path dependency `libatomic` of package `intent-atomic-qualification v0.0.0 (/private/var/folders/g1/8492sgnd1bvgv0mdjfblysv00000gn/T/intent-atomic-qualification-t8_hbhjp/in-process)`
+versions that meet the requirements `^0.30.1` are: 0.30.1
+
+package `libsqlite3-sys` links to the native library `sqlite3`, but it conflicts with a previous package which links to `sqlite3` as well:
+package `libsqlite3-sys v0.37.0`
+    ... which satisfies dependency `libsqlite3-sys = "^0.37"` of package `intent-atomic-qualification v0.0.0 (/private/var/folders/g1/8492sgnd1bvgv0mdjfblysv00000gn/T/intent-atomic-qualification-t8_hbhjp/in-process)`
+note: only one package in the dependency graph may specify the same links value to ensure that only one copy of a native library is linked in the final binary
+for more information, see https://doc.rust-lang.org/cargo/reference/resolver.html#links
+help: try to adjust your dependencies so that only one package uses the `links = "sqlite3"` value
+
+failed to select a version for `libsqlite3-sys` which could resolve this conflict

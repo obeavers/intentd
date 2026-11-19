@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
-exclude = ["vendor/pprof"]
+exclude = ["vendor/pprof", "atomic-host"]
 
 [patch.crates-io]
 # Also cover --manifest-path builds launched outside this directory, where
@@ -112,6 +112,10 @@ debug = "line-tables-only"
 
 # Preserve line-tables-only for workspace crates (panic backtraces)
 [profile.dev.package.intent-acp]
+debug = "line-tables-only"
+[profile.dev.package.intent-atomic]
+debug = "line-tables-only"
+[profile.dev.package.intent-atomic-proto]
 debug = "line-tables-only"
 [profile.dev.package.intent-app]
 debug = "line-tables-only"

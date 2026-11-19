@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/atomicdotdev/atomic",
+  "revision": "bf9893adb57dccbaa8f7e14277e02d060d74bf53",
+  "toolchain": "1.98.0",
+  "release_targets": [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl"
+  ],
+  "fork_owner": null,
+  "authoritative_activation": false
+}

@@ -52,6 +52,8 @@ changelog_path = "./CHANGELOG.md"
 changelog_include = [
     "intent-acp",
     "intent-app",
+    "intent-atomic",
+    "intent-atomic-proto",
     "intent-context",
     "intent-core",
     "intent-git",
@@ -85,6 +87,18 @@ version_group = "intentd"
 
 [[package]]
 name = "intent-app"
+release = true
+git_only = true
+version_group = "intentd"
+
+[[package]]
+name = "intent-atomic"
+release = true
+git_only = true
+version_group = "intentd"
+
+[[package]]
+name = "intent-atomic-proto"
 release = true
 git_only = true
 version_group = "intentd"

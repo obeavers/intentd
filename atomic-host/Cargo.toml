@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+
+[package]
+name = "intent-atomic-host"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98"
+publish = false
+license = "Apache-2.0"
+description = "Intent-owned isolated Atomic repository host"
+
+[dependencies]
+intent-atomic-proto = { path = "../crates/intent-atomic-proto" }
+atomic-core = { git = "https://github.com/atomicdotdev/atomic", rev = "bf9893adb57dccbaa8f7e14277e02d060d74bf53" }
+atomic-agent = { git = "https://github.com/atomicdotdev/atomic", rev = "bf9893adb57dccbaa8f7e14277e02d060d74bf53" }
+atomic-repository = { git = "https://github.com/atomicdotdev/atomic", rev = "bf9893adb57dccbaa8f7e14277e02d060d74bf53" }
+libatomic = { git = "https://github.com/atomicdotdev/atomic", rev = "bf9893adb57dccbaa8f7e14277e02d060d74bf53" }
+atomic-semantic = { git = "https://github.com/atomicdotdev/atomic", rev = "bf9893adb57dccbaa8f7e14277e02d060d74bf53" }
+atomic-identity = { git = "https://github.com/atomicdotdev/atomic", rev = "bf9893adb57dccbaa8f7e14277e02d060d74bf53" }
+atomic-canonical = { git = "https://github.com/atomicdotdev/atomic", rev = "bf9893adb57dccbaa8f7e14277e02d060d74bf53" }
+git2 = "0.21"
+ignore = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+thiserror = "2"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", features = ["fs"] }
+
+[dev-dependencies]
+intent-atomic = { path = "../crates/intent-atomic" }
+intent-core = { path = "../crates/intent-core" }
+tempfile = "3"
+intentd-test-support = { path = "../crates/intentd-test-support" }
+tonic = "0.12"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+chrono = "0.4"
+
+[profile.release]
+panic = "abort"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+allow_attributes = "warn"
+too_many_lines = "allow"
