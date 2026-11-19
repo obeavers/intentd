@@ -815,7 +815,7 @@ impl PgStore {
 
     /// Same contract as `SqliteStore::prepare_task_events`: capture the
     /// workspace's first task baseline before a mutation.
-    pub(super) async fn prepare_task_events(&self, workspace_id: &WorkspaceId) {
+    pub(crate) async fn prepare_task_events(&self, workspace_id: &WorkspaceId) {
         if !self.task_events_enabled.load(Ordering::Acquire) {
             return;
         }

@@ -2009,6 +2009,9 @@ pub struct TaskMetadata {
     pub assigned_agent_ids: Vec<AgentId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub acceptance_criteria: Vec<String>,
+    /// Explicit evidence requirements and source scope; absence means undeclared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_definition: Option<crate::work_evidence::planning::TaskWorkDefinition>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub estimated_effort: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -5811,6 +5814,9 @@ pub struct AgentCreateExtra {
     /// Opt in to remembering this successful manual creation’s specialist.
     pub remember_specialist: bool,
     pub provider: Option<String>,
+    /// Exact reviewed task source for the first turn; a concurrency fence, not authority.
+    #[serde(deserialize_with = "crate::placement::present")]
+    pub expected_task_revision: Option<crate::work_evidence::TaskRevisionRef>,
     /// Reasoning-effort level persisted on the created session (PROTOCOL
     /// §5.5, Option B). Stored as-is when a non-empty string; empty /
     /// whitespace-only values collapse to `None` at the boundary.

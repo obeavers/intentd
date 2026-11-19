@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","result":{"success":true,"steps":[{"id":"push","name":"Push to remote","status":"completed"}],"result":{"pushedSha":"a6c6d5b17889aec5393d5f5a5c6bb7ea1ca4ce7a"}},"id":1}

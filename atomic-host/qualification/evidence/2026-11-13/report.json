@@ -1,0 +1,179 @@
+{
+  "schema": "intent-atomic-qualification-v1",
+  "pin": {
+    "repository": "https://github.com/atomicdotdev/atomic",
+    "revision": "bf9893adb57dccbaa8f7e14277e02d060d74bf53",
+    "toolchain": "1.98.0",
+    "release_targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl"
+    ],
+    "fork_owner": null,
+    "authoritative_activation": false
+  },
+  "script_sha256": "58a7e0b5cfd7042408d61fbca9e5c59993c664c3f326ba5b4884a13d55c8e299",
+  "probe_sha256": "29cbdd753ce7ce129d261c25e2a83b5c05752bd7ffb8e5c16400e323bf810b8d",
+  "native_target": "aarch64-apple-darwin",
+  "input_lock_sha256": {
+    "intentd": "5953b0058004c8bbb67b5f9997123634ab0a9e0487f06a5894b807d1ef5018b7",
+    "atomic": "8d043a4f77b62fa971be9eb9cea8f3b96d2e18c97694605a4acbc0fd2771635e"
+  },
+  "checks": {
+    "source-revision": {
+      "command": [
+        "git",
+        "--no-pager",
+        "rev-parse",
+        "HEAD"
+      ],
+      "exit_code": 0,
+      "duration_seconds": 0.05,
+      "log": "source-revision.log",
+      "log_sha256": "cff11e19c9fdf973da30e0a104cca732c7729b9c3f908aaeb1b8aeb34e61d261"
+    },
+    "source-status": {
+      "command": [
+        "git",
+        "--no-pager",
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all"
+      ],
+      "exit_code": 0,
+      "duration_seconds": 0.452,
+      "log": "source-status.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "compiler": {
+      "command": [
+        "rustup",
+        "run",
+        "1.98.0",
+        "rustc",
+        "-vV"
+      ],
+      "exit_code": 0,
+      "duration_seconds": 0.086,
+      "log": "compiler.log",
+      "log_sha256": "bd38eb565e393486255b35ff1f74e9dc7ca87425f1febb798b9dd042159a833a"
+    },
+    "installed-targets": {
+      "command": [
+        "rustup",
+        "target",
+        "list",
+        "--installed",
+        "--toolchain",
+        "1.98.0"
+      ],
+      "exit_code": 0,
+      "duration_seconds": 0.05,
+      "log": "installed-targets.log",
+      "log_sha256": "dcefa4ee6acf9c2fc7e5b2d7ef69fbdbac4bb7f02cc20269d51732989dfd70bb"
+    }
+  },
+  "in_process_resolution": {
+    "aarch64-apple-darwin": {
+      "command": [
+        "rustup",
+        "run",
+        "1.98.0",
+        "cargo",
+        "tree",
+        "--offline",
+        "-d",
+        "--target",
+        "aarch64-apple-darwin"
+      ],
+      "exit_code": 101,
+      "duration_seconds": 1.102,
+      "log": "resolution-aarch64-apple-darwin.log",
+      "log_sha256": "0985ae5ae91d6750c1125466933ad19eb770a59c1663a468d5436b8b9743e77d",
+      "result": "sqlite-links-conflict"
+    },
+    "x86_64-apple-darwin": {
+      "command": [
+        "rustup",
+        "run",
+        "1.98.0",
+        "cargo",
+        "tree",
+        "--offline",
+        "-d",
+        "--target",
+        "x86_64-apple-darwin"
+      ],
+      "exit_code": 101,
+      "duration_seconds": 0.903,
+      "log": "resolution-x86_64-apple-darwin.log",
+      "log_sha256": "0985ae5ae91d6750c1125466933ad19eb770a59c1663a468d5436b8b9743e77d",
+      "result": "sqlite-links-conflict"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "command": [
+        "rustup",
+        "run",
+        "1.98.0",
+        "cargo",
+        "tree",
+        "--offline",
+        "-d",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit_code": 101,
+      "duration_seconds": 0.973,
+      "log": "resolution-x86_64-unknown-linux-gnu.log",
+      "log_sha256": "0985ae5ae91d6750c1125466933ad19eb770a59c1663a468d5436b8b9743e77d",
+      "result": "sqlite-links-conflict"
+    },
+    "x86_64-unknown-linux-musl": {
+      "command": [
+        "rustup",
+        "run",
+        "1.98.0",
+        "cargo",
+        "tree",
+        "--offline",
+        "-d",
+        "--target",
+        "x86_64-unknown-linux-musl"
+      ],
+      "exit_code": 101,
+      "duration_seconds": 0.631,
+      "log": "resolution-x86_64-unknown-linux-musl.log",
+      "log_sha256": "0985ae5ae91d6750c1125466933ad19eb770a59c1663a468d5436b8b9743e77d",
+      "result": "sqlite-links-conflict"
+    }
+  },
+  "standalone_probe_builds": {
+    "aarch64-apple-darwin": {
+      "result": "unverified",
+      "reason": "build-skipped"
+    },
+    "x86_64-apple-darwin": {
+      "result": "unverified",
+      "reason": "build-skipped"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "result": "unverified",
+      "reason": "build-skipped"
+    },
+    "x86_64-unknown-linux-musl": {
+      "result": "unverified",
+      "reason": "build-skipped"
+    }
+  },
+  "network_denied_runtime_probe": {
+    "result": "unverified",
+    "reason": "native-build-not-passed"
+  },
+  "w01_complete": false,
+  "remaining": [
+    "production host implementation and four-target CI builds",
+    "Q4: Atomic fork and upstream PR owner",
+    "A3: full host network-denied fixture coverage (W17)"
+  ]
+}

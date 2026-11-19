@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","result":{"success":true,"steps":[{"id":"commit","name":"Commit changes","status":"completed","message":"Committed <NEW-COMMIT-1-SHORT>"}],"result":{"commitHash":"<NEW-COMMIT-1>"}},"id":1}

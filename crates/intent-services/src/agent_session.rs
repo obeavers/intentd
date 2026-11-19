@@ -6962,6 +6962,7 @@ impl Services {
             metadata: None,
             data,
         };
+        self.capture_original_idle_record(&event);
         // Route the stream firehose through the transient path (broadcast-
         // only); persist all other agent events (stream:status, stream:end,
         // tool:call, lifecycle, etc.) for durable audit trail.

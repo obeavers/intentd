@@ -1,4 +1,92 @@
 use super::*;
+
+fn child(repo: &Repository, parent: git2::Oid, update: Option<&str>, message: &str) -> git2::Oid {
+    let parent = repo.find_commit(parent).unwrap();
+    let sig = git2::Signature::new(
+        "Fixture",
+        "fixture@example.invalid",
+        &git2::Time::new(1_700_000_000, 0),
+    )
+    .unwrap();
+    repo.commit(
+        update,
+        &sig,
+        &sig,
+        message,
+        &parent.tree().unwrap(),
+        &[&parent],
+    )
+    .unwrap()
+}
+
+#[test]
+fn publication_requires_the_exact_advertised_old_value_and_actual_fast_forward_ancestry() {
+    let (dir, repo, old, urls) = fixture();
+    let old = git2::Oid::from_str(&old).unwrap();
+    let new = child(&repo, old, Some("refs/heads/main"), "projection");
+    let sibling = child(&repo, old, None, "unrelated external movement");
+    let prepared = PreparedNativePush::prepare_expected(
+        dir.path(),
+        "forge",
+        "refs/heads/main",
+        &new.to_string(),
+        &urls,
+        &urls,
+        ExpectedRemoteRef::Commit(intent_core::vcs::GitCommitId::from_string(old.to_string())),
+    )
+    .unwrap();
+    prepared.check_expected(&repo, Some(old)).unwrap();
+    assert!(prepared.check_expected(&repo, Some(sibling)).is_err());
+    assert!(prepared
+        .check_expected(&repo, Some(git2::Oid::ZERO_SHA1))
+        .is_err());
+    assert!(PreparedNativePush::prepare_expected(
+        dir.path(),
+        "forge",
+        "refs/heads/main",
+        &new.to_string(),
+        &urls,
+        &urls,
+        ExpectedRemoteRef::Commit(intent_core::vcs::GitCommitId::from_string(
+            sibling.to_string()
+        ))
+    )
+    .is_err());
+    assert_eq!(repo.refname_to_id("refs/heads/main").unwrap(), new);
+}
+
+#[test]
+fn branch_creation_requires_explicit_absence_and_unknown_or_zero_old_objects_are_refused() {
+    let (dir, repo, new, urls) = fixture();
+    let prepared = PreparedNativePush::prepare_expected(
+        dir.path(),
+        "forge",
+        "refs/heads/main",
+        &new,
+        &urls,
+        &urls,
+        ExpectedRemoteRef::Absent,
+    )
+    .unwrap();
+    prepared
+        .check_expected(&repo, Some(git2::Oid::ZERO_SHA1))
+        .unwrap();
+    assert!(prepared
+        .check_expected(&repo, Some(git2::Oid::from_str(&new).unwrap()))
+        .is_err());
+    for old in ["0".repeat(40), "f".repeat(40)] {
+        assert!(PreparedNativePush::prepare_expected(
+            dir.path(),
+            "forge",
+            "refs/heads/main",
+            &new,
+            &urls,
+            &urls,
+            ExpectedRemoteRef::Commit(intent_core::vcs::GitCommitId::from_string(old))
+        )
+        .is_err());
+    }
+}
 fn fixture() -> (crate::testutil::TempDir, Repository, String, Vec<String>) {
     let dir = crate::testutil::init_repo("native-push");
     let repo = Repository::init_opts(

@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "https://github.com/atomicdotdev/atomic",
+  "sourceCommit": "bf9893adb57dccbaa8f7e14277e02d060d74bf53",
+  "skillsSourceCommit": "e9332ebff36f188ed7b7fc31769f661599363184",
+  "purpose": "Exact-source CLI/sandbox compatibility inspection; no runtime qualification or authority",
+  "nativeSources": [
+    {
+      "path": "atomic-cli/src/main.rs",
+      "sha256": "925e776606716918f2c9b597f3b3ffae2337cdb5b3c61581c6fa41be76139a97",
+      "bytes": 35649
+    },
+    {
+      "path": "atomic-cli/src/remote_sandbox.rs",
+      "sha256": "f61311c4ab0724f78627c914a6746bf7dd1376c80e173f887fdc24ac051e035c",
+      "bytes": 19020
+    },
+    {
+      "path": "atomic-cli/src/service/mod.rs",
+      "sha256": "71e6e4f658d2986a5e0d379b573dc8900cf966236fa7f8e1ab552d8469d82253",
+      "bytes": 80849
+    },
+    {
+      "path": "atomic-cli/src/commands/rpc.rs",
+      "sha256": "e0ef73bb8e4a1281d4e56c80f858d510fda306da69db91df338ba42242896fe7",
+      "bytes": 294488
+    },
+    {
+      "path": "atomic-cli/src/commands/vault/mod.rs",
+      "sha256": "8f615b9587ba7e010be7fd01a11b691bb658f82802a8df077cac4ded1e7acdfa",
+      "bytes": 8579
+    },
+    {
+      "path": "atomic-cli/src/commands/vault/goal.rs",
+      "sha256": "b95dc2d473e4e66f5d9aa456e96f550d92228370efc014386c19881d5fd6238e",
+      "bytes": 12561
+    },
+    {
+      "path": "atomic-cli/src/commands/vault/removed.rs",
+      "sha256": "3b1375e0dce23258abef40c197fe4470ddb0f0df2b47a0ebc33d5a8558938ed2",
+      "bytes": 3600
+    },
+    {
+      "path": "atomic-cli/src/commands/intent/mod.rs",
+      "sha256": "9638f1bcb8d29c6b8e14b6eaa01b61818d422e7257871f870ea5d5f0df14fe81",
+      "bytes": 5196
+    },
+    {
+      "path": "atomic-cli/src/commands/memory/mod.rs",
+      "sha256": "cd5d9778040d7173b9141302a1b9ba25026d4ea277fd49977395bb0b03ceacde",
+      "bytes": 12157
+    },
+    {
+      "path": "atomic-cli/src/commands/query/mod.rs",
+      "sha256": "3f57e545a18d98e47b53a8823e41c5c82e237f59a6d2d7c9bb37616de0a79b17",
+      "bytes": 81372
+    },
+    {
+      "path": "atomic-cli/src/commands/triage/mod.rs",
+      "sha256": "50267aad6fc553d119954564ab7e8e7ad3dd9d9281b0bf71f87a89c81943c564",
+      "bytes": 21659
+    },
+    {
+      "path": "libatomic/src/daemon/sandbox_grants.rs",
+      "sha256": "1cfcdc075bc51ac359a3d34be3714f44ed49a8b419b10a695452e801e03d9c58",
+      "bytes": 29915
+    },
+    {
+      "path": "libatomic/src/daemon/services_sandbox.rs",
+      "sha256": "db6d5c6e0c050aea7943e9d2a5b0a85e316826bfbeba3e9b65ba6dba0b0f1279",
+      "bytes": 39349
+    },
+    {
+      "path": "libatomic/src/daemon/state.rs",
+      "sha256": "19c506f9f4228fac49ae34dea9af3dc8ff74cc141bfc5fe412d59f39c87c858a",
+      "bytes": 20455
+    }
+  ]
+}

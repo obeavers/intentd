@@ -29004,6 +29004,7 @@ mod search_adapters {
                     preview: "struct Widget".to_string(),
                     score: Some(0.87),
                 }],
+                read_basis: None,
             }),
         };
         let svc = Services::new_isolated(store).with_context_engine(std::sync::Arc::new(engine));

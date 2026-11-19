@@ -91,6 +91,9 @@ pub use intent_acp::workers::is_wire_id;
 pub(crate) use retire::UnarchiveOutcome;
 mod agy_cli;
 mod assistant_context;
+pub mod atomic_tracer;
+#[cfg(unix)]
+pub mod atomic_tracer_runtime;
 mod attachment_upload;
 mod auggie_cli;
 mod auto_commit;
@@ -138,6 +141,10 @@ pub mod home_setup;
 pub mod host_exec;
 pub mod host_exec_stream;
 mod installed_cli;
+mod knowledge_ops;
+mod vcs_binding;
+mod vcs_ops;
+mod work_planning;
 mod workspace_mutations;
 
 mod github_ops;
@@ -587,6 +594,9 @@ struct WorkspaceAggregateSnapshot {
 #[derive(Clone)]
 pub struct Services {
     store: Store,
+    git_workspace_engine: Arc<dyn intent_core::vcs::WorkspaceEngine>,
+    atomic_code_client: Option<Arc<intent_atomic::knowledge::AtomicCodeClient>>,
+    original_record_handoffs: auto_commit::recording::OriginalRecordHandoffs,
     /// Root directory for note assets, laid out as `<root>/<workspaceId>/<assetId>`.
     /// `None` until configured by the composition root; `note.readAsset` errors
     /// when unset.
@@ -1711,6 +1721,12 @@ pub(crate) const SWEEP_INTER_WORKSPACE_PAUSE: std::time::Duration =
 pub(crate) const PR_REFRESH_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
 impl Services {
+    /// Return the owned Git engine; this does not select Atomic source authority.
+    #[must_use]
+    pub fn git_workspace_engine(&self) -> Arc<dyn intent_core::vcs::WorkspaceEngine> {
+        Arc::clone(&self.git_workspace_engine)
+    }
+
     /// Wire the services surface over a persistence handle.
     #[must_use]
     pub fn new(store: Store) -> Self {
@@ -1781,6 +1797,9 @@ impl Services {
         );
         let services = Self {
             store,
+            git_workspace_engine: Arc::new(intent_git::GitWorkspaceEngine::default()),
+            atomic_code_client: None,
+            original_record_handoffs: auto_commit::recording::OriginalRecordHandoffs::default(),
             assets_root: None,
             chief_cwd_root: None,
             event_subscriptions: Arc::new(Mutex::new(HashMap::new())),
@@ -26308,6 +26327,27 @@ impl WorkspaceApi for Services {
         })
     }
 
+    fn task_configure_work_definition(
+        &self,
+        workspace_id: WorkspaceId,
+        note_id: NoteId,
+        input: intent_core::work_evidence::planning::TaskConfigureWorkDefinitionInput,
+    ) -> BoxFuture<
+        '_,
+        Result<intent_core::work_evidence::planning::TaskConfigureWorkDefinitionResult>,
+    > {
+        Box::pin(async move {
+            self.configure_task_work_definition_complete(
+                &workspace_id,
+                &note_id,
+                input.expected_note_version,
+                input.acceptance_criteria,
+                input.work_definition,
+            )
+            .await
+        })
+    }
+
     fn task_list(
         &self,
         workspace_id: WorkspaceId,
@@ -29272,6 +29312,7 @@ impl WorkspaceApi for Services {
         user_requested: bool,
         git_root_id: Option<WorkspaceGitRootId>,
     ) -> BoxFuture<'_, Result<intent_core::GitAgentCommitResult>> {
+        let original_recording = auto_commit::recording::current();
         let store = self.store.clone();
         let bus = self.event_bus.clone();
         let this = self.clone();
@@ -29435,7 +29476,56 @@ impl WorkspaceApi for Services {
                 // semantics) so paths another actor pre-staged are never swept
                 // into this commit. The `userRequested` staged-only checkpoint
                 // commits the index as-is.
-                let outcome = if needs_stage {
+                let outcome = if let Some(original) = original_recording {
+                    let root = this
+                        .git_engine_binding(&ws, git_root_id.as_ref(), &worktree)
+                        .await?;
+                    original.validate_request(
+                        &root,
+                        agent_id.as_ref(),
+                        linked_note_id.as_ref(),
+                        user_requested,
+                        explicit_files,
+                    )?;
+                    let engine = this.git_workspace_engine();
+                    let request = intent_core::vcs::RecordRequest {
+                        message: message.clone(),
+                        selection: if needs_stage {
+                            intent_core::vcs::RecordSelection::Attributed(to_commit.clone())
+                        } else {
+                            intent_core::vcs::RecordSelection::StagedIndex
+                        },
+                        agent_id: agent_id.as_ref().map(|id| id.as_str().to_owned()),
+                        linked_note_id: linked_note_id.as_ref().map(|id| id.as_str().to_owned()),
+                    };
+                    tokio::task::spawn_blocking(move || {
+                        let observed = engine
+                            .record(&root, &request)
+                            .map_err(vcs_ops::engine_error)?;
+                        let intent_core::vcs::RecordOutcome::Recorded(recorded) = observed else {
+                            return Err(Error::Internal(
+                                "Original automatic record produced no contribution".into(),
+                            ));
+                        };
+                        // Retain the physical fact before any await or fallible bookkeeping.
+                        original.observe(root, recorded.clone());
+                        let intent_core::vcs::NativeChangeRef::Git { commit, .. } = recorded.change
+                        else {
+                            return Err(Error::Internal(
+                                "Git record returned a foreign engine identity".into(),
+                            ));
+                        };
+                        Ok(intent_git::commit::CommitOutcome {
+                            hash: commit.0,
+                            files: recorded.files,
+                            index_refresh_error: recorded.index_refresh_error,
+                        })
+                    })
+                    .await
+                    .map_err(|error| {
+                        Error::Internal(format!("Original Git recording worker: {error}"))
+                    })??
+                } else if needs_stage {
                     match intent_git::commit::commit_paths_with_trailers(
                         &worktree,
                         &message,
@@ -30653,12 +30743,27 @@ impl WorkspaceApi for Services {
             if let Some(model) = model.as_deref() {
                 reject_compound_model("model", model)?;
             }
+            let confirmed_revision = extra.expected_task_revision.clone();
+            let confirmed_note = if let Some(expected) = &confirmed_revision {
+                if !matches!(intent_core::current_caller(), Some(intent_core::Caller::Wire { .. })) {
+                    return Err(Error::Forbidden("Confirmed task creation requires the authenticated human caller".into()));
+                }
+                if expected.workspace_id != workspace_id || extra.metadata.as_ref()
+                    .and_then(|metadata| metadata.get("taskNoteId"))
+                    .and_then(serde_json::Value::as_str) != Some(expected.note_id.as_str()) {
+                    return Err(Error::InvalidParams("expectedTaskRevision must match workspaceId and metadata.taskNoteId exactly".into()));
+                }
+                if extra.placement.is_some() || parent_agent_id.is_some() {
+                    return Err(Error::Unsupported("Confirmed source launches currently require an ordinary local root agent".into()));
+                }
+                Some(expected.note_id.clone())
+            } else { None };
             let ws_scope = workspace_id.0.clone();
             // Harness-owned commits: sessions created while the workspace's
             // effective auto-commit is off opt out of the idle subscriber, so
             // nothing commits unless the user explicitly asks.
             let skip_auto_commit = !self.effective_auto_commit(&workspace_id).await;
-            with_idempotency(
+            let result = with_idempotency(
                 &self.idempotency_inflight,
                 &self.store,
                 &ws_scope,
@@ -30671,14 +30776,21 @@ impl WorkspaceApi for Services {
                         model,
                         specialist_id,
                         parent_agent_id,
-                        None,
+                        confirmed_note,
                         skip_auto_commit,
                         extra,
                     )
                     .await
                 },
             )
-            .await
+            .await?;
+            if let Some(expected) = &confirmed_revision {
+                let agent = result.get("agent").and_then(|agent| agent.get("id"))
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| Error::Internal("Confirmed create returned no agent identity".into()))?;
+                self.store.require_agent_confirmed_task_current(&AgentId::from(agent), expected).await?;
+            }
+            Ok(result)
         })
     }
 

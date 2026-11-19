@@ -24,7 +24,9 @@ pub mod conflicts;
 pub mod cow;
 pub mod cow_checkout;
 pub mod diff;
+pub mod engine;
 pub mod fetch;
+pub mod fixture;
 pub mod fs_remove;
 pub mod history;
 pub mod hub;
@@ -33,7 +35,9 @@ pub mod local_changes;
 pub mod ls_remote;
 pub mod native_checkout;
 pub mod native_push;
+pub mod nested_repos;
 pub mod node_git;
+pub mod provisioning;
 pub mod pull;
 pub mod push;
 pub mod rebase;
@@ -50,6 +54,8 @@ pub mod stash;
 pub mod status;
 pub mod submodule;
 pub mod worktree;
+
+pub use engine::GitWorkspaceEngine;
 
 #[cfg(test)]
 mod testutil;

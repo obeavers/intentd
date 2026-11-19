@@ -1,0 +1,93 @@
+{
+  "schema": "intent-atomic-qualification-v1",
+  "pin": {
+    "repository": "https://github.com/atomicdotdev/atomic",
+    "revision": "bf9893adb57dccbaa8f7e14277e02d060d74bf53",
+    "toolchain": "1.98.0",
+    "release_targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl"
+    ],
+    "fork_owner": null,
+    "authoritative_activation": false
+  },
+  "native_target": "aarch64-apple-darwin",
+  "input_lock_sha256": {
+    "intentd": "5953b0058004c8bbb67b5f9997123634ab0a9e0487f06a5894b807d1ef5018b7",
+    "atomic": "8d043a4f77b62fa971be9eb9cea8f3b96d2e18c97694605a4acbc0fd2771635e"
+  },
+  "standalone_probe_builds": {
+    "aarch64-apple-darwin": {
+      "command": [
+        "rustup",
+        "run",
+        "1.98.0",
+        "cargo",
+        "build",
+        "--offline",
+        "--release",
+        "--target",
+        "aarch64-apple-darwin"
+      ],
+      "exit_code": 0,
+      "duration_seconds": 321.691,
+      "log": "build-aarch64-apple-darwin.log",
+      "log_sha256": "8132c19d2a8fd5841ab83d412b9d5fae7769ad958e44fdcdd2e61636cb10f64e",
+      "result": "passed"
+    },
+    "x86_64-apple-darwin": {
+      "result": "unverified",
+      "reason": "not-requested"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "result": "unverified",
+      "reason": "not-requested"
+    },
+    "x86_64-unknown-linux-musl": {
+      "result": "unverified",
+      "reason": "not-requested"
+    }
+  },
+  "network_denied_runtime_probe": {
+    "result": "unverified",
+    "reason": "network-containment-not-proven"
+  },
+  "w01_complete": false,
+  "remaining": [
+    "production host implementation and four-target CI builds",
+    "Q4: Atomic fork and upstream PR owner",
+    "A3: full host network-denied fixture coverage (W17)"
+  ],
+  "probe_sha256": "29cbdd753ce7ce129d261c25e2a83b5c05752bd7ffb8e5c16400e323bf810b8d",
+  "checks": {
+    "compiler": {
+      "command": [
+        "rustup",
+        "run",
+        "1.98.0",
+        "rustc",
+        "-vV"
+      ],
+      "exit_code": 0,
+      "duration_seconds": 0.143,
+      "log": "compiler.log",
+      "log_sha256": "bd38eb565e393486255b35ff1f74e9dc7ca87425f1febb798b9dd042159a833a"
+    },
+    "network-denial-control": {
+      "command": [
+        "/usr/bin/sandbox-exec",
+        "-p",
+        "(version 1)(allow default)(deny network*)",
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "-c",
+        "import errno,socket,sys\ntry:\n socket.socket().connect(('127.0.0.1',9))\nexcept OSError as e:\n sys.exit(0 if e.errno in (errno.EPERM,errno.EACCES) else 1)\nsys.exit(1)\n"
+      ],
+      "exit_code": 71,
+      "duration_seconds": 0.014,
+      "log": "network-denial-control.log",
+      "log_sha256": "d34a4e4359a4dc36526cf5b363da32f7b7594a3a09eea17cbdfd6425b052d93e"
+    }
+  }
+}

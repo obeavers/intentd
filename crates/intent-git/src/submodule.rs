@@ -94,6 +94,32 @@ pub(crate) fn has_submodules(worktree_path: &Path) -> bool {
     worktree_path.join(".gitmodules").exists()
 }
 
+/// Repository facts needed to classify paths without exposing a live Git handle.
+/// Read once per classification so paths and case handling use the same repository.
+#[derive(Debug, Clone)]
+pub struct SubmodulePathContext {
+    pub paths: std::collections::BTreeSet<String>,
+    pub ignore_case: bool,
+    pub workdir: Option<std::path::PathBuf>,
+}
+
+/// Read registered submodules and the repository's path-comparison rules.
+/// A directory that cannot be opened as a repository has no context. Callers
+/// may preserve their existing no-op behavior for that case.
+///
+/// # Errors
+/// Returns an error if the repository's tracked submodule paths cannot be read.
+pub fn path_context(worktree: &Path) -> Result<Option<SubmodulePathContext>> {
+    let Ok(repo) = Repository::open(worktree) else {
+        return Ok(None);
+    };
+    Ok(Some(SubmodulePathContext {
+        paths: submodule_paths(&repo)?,
+        ignore_case: ignores_case(&repo),
+        workdir: repo.workdir().map(Path::to_path_buf),
+    }))
+}
+
 /// The set of registered submodule (gitlink) paths in `repo`, worktree-relative
 /// with forward-slash separators. Guards a `commit_paths_with_trailers`/`stage`
 /// caller from ever flattening a submodule into the superproject (monorepo#1714):
@@ -398,6 +424,21 @@ fn read_stderr(child: &mut std::process::Child) -> String {
 mod tests {
     use super::*;
     use crate::testutil::{commit_file, init_repo};
+
+    #[test]
+    fn path_context_distinguishes_a_non_repository() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(path_context(dir.path()).unwrap().is_none());
+        let repo = Repository::init(dir.path()).unwrap();
+        repo.config()
+            .unwrap()
+            .set_bool("core.ignorecase", true)
+            .unwrap();
+        let context = path_context(dir.path()).unwrap().unwrap();
+        assert!(context.paths.is_empty());
+        assert!(context.ignore_case);
+        assert_eq!(context.workdir, repo.workdir().map(Path::to_path_buf));
+    }
 
     /// Update a repo with no submodules must succeed as a no-op.
     #[test]

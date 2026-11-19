@@ -1,0 +1,29 @@
+[package]
+name = "intent-atomic"
+version = "0.11.253"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "Fail-closed client and supervision for the isolated Atomic host"
+
+[dependencies]
+intent-atomic-proto = { workspace = true }
+intent-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+async-trait = "0.1"
+sha2 = "0.11"
+uuid = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+intentd-test-support = { path = "../intentd-test-support" }
+
+[lints]
+workspace = true

@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","error":{"code":-32603,"message":"Internal error","data":"fatal: pathspec 'does/not/exist.txt' did not match any files"},"id":1}

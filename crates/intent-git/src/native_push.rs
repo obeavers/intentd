@@ -4,6 +4,14 @@ use git2::{Cred, PushOptions, RemoteCallbacks, RemoteRedirect, Repository};
 use intent_core::{Error, Result};
 use std::path::{Path, PathBuf};
 
+/// The exact remote condition captured by a publication owner. Absence is an
+/// explicit condition, never an omitted expected value or a force-push request.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExpectedRemoteRef {
+    Absent,
+    Commit(intent_core::vcs::GitCommitId),
+}
+
 fn unavailable() -> Error {
     Error::Internal("Native HTTPS push unavailable".into())
 }
@@ -17,6 +25,7 @@ pub struct PreparedNativePush {
     sha: String,
     fetch: Vec<String>,
     destinations: Vec<String>,
+    expected_old: Option<ExpectedRemoteRef>,
 }
 impl PreparedNativePush {
     /// Prepare only an existing local branch, all original HTTPS destinations and
@@ -48,9 +57,71 @@ impl PreparedNativePush {
             sha: sha.into(),
             fetch: fetch.to_vec(),
             destinations: destinations.to_vec(),
+            expected_old: None,
         };
         value.check()?;
         Ok(value)
+    }
+
+    /// Prepare a publication push with both an explicit old-value condition
+    /// and a locally verified fast-forward. The actual negotiation rechecks
+    /// the advertised remote old value; the Git protocol update then carries
+    /// that old object to the server. This is not a publication authorization
+    /// or a cross-forge transport qualification.
+    /// # Errors
+    /// Refuses missing old objects, non-fast-forward ancestry or unsafe facts.
+    pub fn prepare_expected(
+        path: &Path,
+        remote: &str,
+        reference: &str,
+        sha: &str,
+        fetch: &[String],
+        destinations: &[String],
+        expected_old: ExpectedRemoteRef,
+    ) -> Result<Self> {
+        let mut prepared = Self::prepare(path, remote, reference, sha, fetch, destinations)?;
+        prepared.expected_old = Some(expected_old);
+        prepared.check()?;
+        Ok(prepared)
+    }
+
+    fn check_expected(
+        &self,
+        repo: &Repository,
+        advertised_old: Option<git2::Oid>,
+    ) -> std::result::Result<(), git2::Error> {
+        let Some(expected) = &self.expected_old else {
+            return Ok(());
+        };
+        let refused = || git2::Error::from_str("Expected remote value and fast-forward required");
+        let new = git2::Oid::from_str(&self.sha)?;
+        repo.find_commit(new)?;
+        let expected = match expected {
+            ExpectedRemoteRef::Absent => git2::Oid::ZERO_SHA1,
+            ExpectedRemoteRef::Commit(commit) => {
+                if commit.as_str().len() != 40
+                    || !commit
+                        .as_str()
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                {
+                    return Err(refused());
+                }
+                let old = git2::Oid::from_str(commit.as_str())?;
+                if old.is_zero() {
+                    return Err(refused());
+                }
+                repo.find_commit(old)?;
+                if old != new && !repo.graph_descendant_of(new, old)? {
+                    return Err(refused());
+                }
+                old
+            }
+        };
+        if advertised_old.is_some_and(|actual| actual != expected) {
+            return Err(refused());
+        }
+        Ok(())
     }
     fn check(&self) -> Result<Repository> {
         let repo = Repository::open(&self.path).map_err(|_| unavailable())?;
@@ -113,6 +184,8 @@ impl PreparedNativePush {
         if fetch != self.fetch || push != self.destinations {
             return Err(unavailable());
         }
+        self.check_expected(&repo, None)
+            .map_err(|_| unavailable())?;
         drop(entries);
         drop(config);
         Ok(repo)
@@ -145,9 +218,11 @@ impl PreparedNativePush {
                 if updates.len() != 1
                     || updates[0].dst() != git2::Oid::from_str(&self.sha)?
                     || updates[0].dst_refname()? != self.reference
+                    || updates[0].src_refname()? != self.reference
                 {
                     return Err(git2::Error::from_str("Original ref and object only"));
                 }
+                self.check_expected(&repo, Some(updates[0].src()))?;
                 Ok(())
             });
             let mut confirmed = false;

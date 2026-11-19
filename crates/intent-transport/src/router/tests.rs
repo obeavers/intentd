@@ -8607,6 +8607,9 @@ mod oversized_response {
 #[path = "tests/discovery_context.rs"]
 mod discovery_context;
 
+#[path = "tests/task_planning_rejection.rs"]
+mod task_planning_rejection;
+
 mod integration_context;
 
 #[tokio::test]

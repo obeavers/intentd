@@ -1,0 +1,145 @@
+--- a/atomic-repository/src/content_filter.rs
++++ b/atomic-repository/src/content_filter.rs
+@@ -104,6 +104,7 @@
+ pub struct GitAttributesFilter {
+     root: PathBuf,
+     config: ContentFilterConfig,
++    raw_bytes: bool,
+ }
+ 
+ impl GitAttributesFilter {
+@@ -117,7 +118,13 @@
+         Self {
+             root: root.into(),
+             config,
+-        }
++            raw_bytes: false,
++        }
++    }
++
++    /// Exact repository bytes, without config discovery or external drivers.
++    pub fn raw(root: impl Into<PathBuf>) -> Self {
++        Self { root: root.into(), config: ContentFilterConfig::default(), raw_bytes: true }
+     }
+ 
+     /// Load filter bounds and driver definitions from `.atomic/config.toml`.
+@@ -180,6 +187,7 @@
+         path: &Path,
+         input: &[u8],
+     ) -> Result<FilteredContent, ContentFilterError> {
++        if self.raw_bytes { return Ok(FilteredContent::exact(input)); }
+         let attrs = self.attributes(path)?;
+ 
+         // A repository-side LFS pointer is already canonical metadata, not the
+@@ -351,7 +359,7 @@
+     }
+ 
+     fn is_git_tracked(&self, path: &Path) -> bool {
+-        if !self.root.join(".git").exists() {
++        if self.raw_bytes || !self.root.join(".git").exists() {
+             return false;
+         }
+         Command::new("git")
+--- a/atomic-repository/src/record/options.rs
++++ b/atomic-repository/src/record/options.rs
+@@ -32,6 +32,9 @@
+     /// Specific paths to record (empty = all modified files).
+     paths: Vec<String>,
+ 
++    /// Preserve exact selected bytes; never discover or execute content filters.
++    raw_bytes: bool,
++
+     /// Whether to record all changes (ignore paths filter).
+     all: bool,
+ 
+@@ -160,6 +163,11 @@
+     pub fn new() -> Self {
+         Self::default()
+     }
++
++    /// Preserve raw selected bytes, bypassing attributes and filter drivers.
++    pub fn raw_bytes(mut self, raw: bool) -> Self { self.raw_bytes = raw; self }
++
++    pub fn get_raw_bytes(&self) -> bool { self.raw_bytes }
+ 
+     /// Set specific paths to record.
+     ///
+@@ -551,6 +559,7 @@
+         Self {
+             unhashed: None,
+             paths: Vec::new(),
++            raw_bytes: false,
+             all: false,
+             include_untracked: false,
+             algorithm: Algorithm::Myers,
+--- a/atomic-repository/src/repository/status.rs
++++ b/atomic-repository/src/repository/status.rs
+@@ -41,6 +41,7 @@
+             UntrackedScanPolicy::Always,
+             true,
+             None,
++            false,
+         )
+     }
+ 
+@@ -56,6 +57,7 @@
+         options: StatusOptions,
+         detect_raw_renames: bool,
+         include_all_untracked: bool,
++        raw_bytes: bool,
+     ) -> Result<RepositoryStatus, RepositoryError> {
+         let policy = if include_all_untracked {
+             UntrackedScanPolicy::Always
+@@ -64,7 +66,7 @@
+         } else {
+             UntrackedScanPolicy::Never
+         };
+-        self.status_inner(working_copy, options, policy, false, None)
++        self.status_inner(working_copy, options, policy, false, None, raw_bytes)
+     }
+ 
+     fn status_inner(
+@@ -74,6 +76,7 @@
+         untracked_policy: UntrackedScanPolicy,
+         hash_untracked: bool,
+         change_source_override: Option<&dyn crate::change_source::ChangeSource>,
++        raw_bytes: bool,
+     ) -> Result<RepositoryStatus, RepositoryError> {
+         let view_name = self.desired_view_name(working_copy)?;
+         let overall_start = std::time::Instant::now();
+@@ -90,7 +93,7 @@
+                 name: view_name.clone(),
+             })?;
+         let visibility = graph_visibility_closure(&txn, &view)?;
+-        let content_filter = crate::content_filter::GitAttributesFilter::for_repository(&self.root);
++        let content_filter = if raw_bytes { crate::content_filter::GitAttributesFilter::raw(&self.root) } else { crate::content_filter::GitAttributesFilter::for_repository(&self.root) };
+         let git_colocated = self.root.join(".git").symlink_metadata().is_ok();
+         // Native tracking keeps raw names, including escape-looking names.
+         // Imported Git identities need decoding only at filesystem boundaries;
+@@ -1062,6 +1065,7 @@
+             UntrackedScanPolicy::Never,
+             false,
+             Some(source),
++            false,
+         )
+     }
+ 
+--- a/atomic-repository/src/repository/record.rs
++++ b/atomic-repository/src/repository/record.rs
+@@ -2059,6 +2059,7 @@
+                 status_options,
+                 options.get_detect_raw_renames(),
+                 options.get_include_untracked(),
++                options.get_raw_bytes(),
+             )
+             .map_err(RecordError::Repository)?;
+         if trace_record {
+@@ -2126,7 +2127,7 @@
+             .clone()
+             .max_file_size(usize::MAX)
+             .skip_binary(false);
+-        let content_filter = crate::content_filter::GitAttributesFilter::for_repository(&self.root);
++        let content_filter = if options.get_raw_bytes() { crate::content_filter::GitAttributesFilter::raw(&self.root) } else { crate::content_filter::GitAttributesFilter::for_repository(&self.root) };
+         use crate::content_filter::ContentFilter;
+ 
+         // Create a memory working copy for the recording workflow

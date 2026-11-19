@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","result":[{"file":"README.md","chunks":[],"oldContent":"# Golden fixture\n\nIntro.\n","newContent":"# Golden fixture\n\nIntro, revised.\n"},{"file":"src/lib.rs","chunks":[],"oldContent":"pub fn one() -> u32 {\n    1\n}\n","newContent":"pub fn one() -> u32 {\n    1\n}\n\npub fn two() -> u32 {\n    2\n}\n"}],"id":1}

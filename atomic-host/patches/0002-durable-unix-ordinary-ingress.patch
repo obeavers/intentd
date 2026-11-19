@@ -1,0 +1,15 @@
+--- a/atomic-repository/src/repository/changes.rs
++++ b/atomic-repository/src/repository/changes.rs
+@@ -328,6 +328,12 @@
+             save_projected_change_without_overwrite(&change_path, change_bytes)?;
+             return Ok(*hash);
+         }
++        // On Unix reuse the existing durable, no-overwrite object publisher
++        // for ordinary ingress as well as projected changes. Full envelopes
++        // with one native hash must never silently replace different bytes.
++        #[cfg(unix)]
++        save_projected_change_without_overwrite(&change_path, change_bytes)?;
++        #[cfg(not(unix))]
+         std::fs::write(&change_path, change_bytes)?;
+         Ok(*hash)
+     }

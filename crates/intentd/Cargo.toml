@@ -60,12 +60,19 @@ sha2 = "0.11"
 
 [features]
 default = []
+# Explicit developer fixture command; ordinary daemon and release builds omit it.
+atomic-tracer = []
 # WSAPI-1 spike: link the QuickJS-backed JS engine. Off by default so the
 # baseline binary is unchanged; enable to measure size / build impact.
 js-engine = ["dep:intent-js"]
 # Explicit cold loopback descriptors for the real GitLab auth socket tests.
 # Packaging and ordinary daemon builds must leave this feature disabled.
 repository-test-fixtures = ["intent-services/repository-test-fixtures", "intent-transport/repository-test-fixtures", "dep:intent-sourcecontrol"]
+
+[[bin]]
+name = "atomic-tracer"
+path = "src/bin/atomic-tracer.rs"
+required-features = ["atomic-tracer"]
 
 # Suites: each file listed in tests/suite_<name>.rs is one module of it.
 [[test]]

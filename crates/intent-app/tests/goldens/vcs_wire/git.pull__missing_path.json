@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","error":{"code":-32602,"message":"Repository path does not exist: <ROOT>/nope","data":{"code":"invalid-params"}},"id":1}

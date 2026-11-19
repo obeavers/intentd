@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","error":{"code":-32602,"message":"invalid params: hunkPatch targets `a/README.md b/README.md`, expected `a/both.txt b/both.txt`","data":{"code":"invalid-params"}},"id":1}

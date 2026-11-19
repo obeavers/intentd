@@ -109,6 +109,7 @@ impl OriginalTurn {
 mod monitor_wake;
 mod repository_origin;
 pub(crate) mod scratch_adapter;
+pub(crate) mod work_admission;
 use crate::repository_admission::lifecycle::physical_owner::RepositoryCreationIntent;
 pub(crate) use monitor_wake::QueuedMonitorTurn;
 pub(crate) use repository_origin::callback_delivery::RepositoryPromptInput;
@@ -2959,7 +2960,22 @@ enum TryBeginOutcome {
 /// Identity of a claimed slot. Teardown invalidates it, so an admitted send
 /// cannot register a worker against a later claim after retirement/restore.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TurnAdmission(usize);
+pub(crate) struct TurnAdmission {
+    sequence: usize,
+    attempt_id: uuid::Uuid,
+}
+
+#[expect(
+    clippy::option_option,
+    reason = "status updates preserve untouched/clear/set"
+)]
+struct PersistedStatusTransition {
+    status: AgentStatus,
+    is_active: bool,
+    stop_reason: Option<Option<String>>,
+    turn_boundary: bool,
+    timestamp: String,
+}
 
 /// Why [`AgentManager::claim_slot_sync`] did not claim: the two
 /// [`TryBeginOutcome`] losses, or the caller's own claim precondition
@@ -7950,7 +7966,13 @@ impl AgentManager {
         }) {
             Ok(((), admission)) => {
                 if boxed_await(|| {
-                    self.begin_turn_side_effects(agent_id, workspace_id, auto_unarchive, fence)
+                    self.begin_turn_side_effects(
+                        agent_id,
+                        workspace_id,
+                        auto_unarchive,
+                        fence,
+                        admission,
+                    )
                 })
                 .await
                 {
@@ -7999,8 +8021,10 @@ impl AgentManager {
         });
         match claimed {
             Ok(popped) => {
-                if boxed_await(|| self.begin_turn_side_effects(agent_id, workspace_id, true, fence))
-                    .await
+                if boxed_await(|| {
+                    self.begin_turn_side_effects(agent_id, workspace_id, true, fence, popped.1)
+                })
+                .await
                 {
                     Some(popped)
                 } else {
@@ -8101,7 +8125,10 @@ impl AgentManager {
         // idle write. (`settled_turns` cannot survive a release.)
         self.pending_idle_writes.lock().unwrap().remove(agent_id);
         busy.insert(agent_id.clone());
-        let admission = TurnAdmission(self.next_admission.fetch_add(1, AtomicOrdering::Relaxed));
+        let admission = TurnAdmission {
+            sequence: self.next_admission.fetch_add(1, AtomicOrdering::Relaxed),
+            attempt_id: uuid::Uuid::new_v4(),
+        };
         self.turn_admissions
             .lock()
             .unwrap()
@@ -8153,6 +8180,7 @@ impl AgentManager {
         workspace_id: &WorkspaceId,
         auto_unarchive: bool,
         archive_fence: Option<crate::ArchiveFenceGuard>,
+        admission: TurnAdmission,
     ) -> bool {
         #[cfg(test)]
         {
@@ -8270,17 +8298,14 @@ impl AgentManager {
                     "failed to clear advisory-wake markers at turn start"
                 );
             }
+            if let Err(error) =
+                boxed_await(|| self.persist_bound_turn_start(agent_id, workspace_id, admission))
+                    .await
+            {
+                tracing::warn!(agent = %agent_id, %error, "original work admission failed; provider execution remains closed");
+                return false;
+            }
             self.services.agent_activity_begin(workspace_id).await;
-            // Clear stop_reason when starting a new turn: successful turns leave it cleared.
-            self.persist_status_with_stop_reason(
-                agent_id,
-                workspace_id,
-                AgentStatus::Active,
-                true,
-                Some(None),
-                true,
-            )
-            .await;
         }
         true
     }
@@ -8449,13 +8474,13 @@ impl AgentManager {
         agent_id: &AgentId,
         record_idle_write: bool,
     ) -> Option<Option<(WorkspaceId, Option<u64>)>> {
-        let removed = {
+        let (removed, admission) = {
             let mut busy = self.busy.lock().unwrap();
             if !busy.remove(agent_id) {
                 return None;
             }
             self.settled_turns.lock().unwrap().remove(agent_id);
-            self.turn_admissions.lock().unwrap().remove(agent_id);
+            let admission = self.turn_admissions.lock().unwrap().remove(agent_id);
             if busy.is_empty() {
                 *self.idle_since.lock().unwrap() = Some(Instant::now());
             }
@@ -8465,7 +8490,7 @@ impl AgentManager {
             // later unrelated turn.
             self.auto_unarchived.lock().unwrap().remove(agent_id);
             let workspace_id = self.agent_ws.lock().unwrap().remove(agent_id);
-            workspace_id.map(|workspace_id| {
+            let removed = workspace_id.map(|workspace_id| {
                 let token = record_idle_write.then(|| {
                     let token = self.next_idle_write.fetch_add(1, AtomicOrdering::Relaxed);
                     self.pending_idle_writes
@@ -8475,8 +8500,21 @@ impl AgentManager {
                     token
                 });
                 (workspace_id, token)
-            })
+            });
+            (removed, admission)
         };
+        if let (Some((workspace_id, _)), Some(admission)) = (removed.as_ref(), admission) {
+            let store = self.services.store.clone();
+            let workspace_id = workspace_id.clone();
+            let agent_id = agent_id.clone();
+            let _retirement = self.services.store_tasks.spawn_draining(async move {
+                if let Err(error) = store.retire_work_turn(
+                    &workspace_id, &agent_id, &admission.attempt_id.to_string(),
+                ).await {
+                    tracing::warn!(%agent_id, %error, "original work turn retirement requires reconciliation");
+                }
+            });
+        }
         self.registry.wake_waiter_if_idle(agent_id);
         Some(removed)
     }
@@ -8816,6 +8854,33 @@ impl AgentManager {
             tracing::warn!(agent = %agent_id, error = %e, "failed to persist agent status + stop_reason");
             return;
         }
+        self.publish_persisted_status(
+            agent_id,
+            workspace_id,
+            PersistedStatusTransition {
+                status,
+                is_active,
+                stop_reason: stop_reason_for_event,
+                turn_boundary,
+                timestamp: ts,
+            },
+        )
+        .await;
+    }
+
+    async fn publish_persisted_status(
+        &self,
+        agent_id: &AgentId,
+        workspace_id: &WorkspaceId,
+        transition: PersistedStatusTransition,
+    ) {
+        let PersistedStatusTransition {
+            status,
+            is_active,
+            stop_reason: stop_reason_for_event,
+            turn_boundary,
+            timestamp: ts,
+        } = transition;
         let Ok(Value::String(serialized_status)) = serde_json::to_value(status) else {
             return;
         };
@@ -15769,13 +15834,29 @@ async fn run_message_worker(
                     }
                 };
                 let prepared = boxed_await(|| async {
+                    let source = crate::auto_commit::recording::OriginalRecordSource::capture(
+                        &mgr.services.store,
+                        &workspace_id,
+                        &agent_id,
+                        &admission.attempt_id.to_string(),
+                    )
+                    .await?;
                     let prompt = mgr
-                        .build_turn_prompt(&agent_id, &workspace_id, &content, &options)
+                        .build_bound_turn_prompt(
+                            &agent_id,
+                            &workspace_id,
+                            admission,
+                            &content,
+                            &options,
+                        )
                         .await?;
-                    crate::provider_images::PreparedPrompt::new(prompt).await
+                    Ok::<_, Error>((
+                        crate::provider_images::PreparedPrompt::new(prompt).await?,
+                        source,
+                    ))
                 })
                 .await;
-                let prompt = match prepared {
+                let (prompt, recording_source) = match prepared {
                     Ok(prompt) => prompt,
                     Err(e) => {
                         // Restore only on pre-delivery failure, never on an ACP
@@ -15835,14 +15916,17 @@ async fn run_message_worker(
                 // provider-initiated cancel.
                 let stale_cancel = mgr.take_stale_cancel(&agent_id);
                 match boxed_await(|| {
-                    mgr.run_turn_owned_with(
-                        &agent_id,
-                        &workspace_id,
-                        &acp_session_id,
-                        prompt,
-                        options.turn_id.as_deref(),
-                        turn,
-                        stale_cancel,
+                    work_admission::scope(
+                        recording_source,
+                        mgr.run_turn_owned_with(
+                            &agent_id,
+                            &workspace_id,
+                            &acp_session_id,
+                            prompt,
+                            options.turn_id.as_deref(),
+                            turn,
+                            stale_cancel,
+                        ),
                     )
                 })
                 .await

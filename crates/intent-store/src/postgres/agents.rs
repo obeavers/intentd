@@ -570,7 +570,11 @@ impl PgStore {
         .map(|_| ()))
     }
 
-    async fn remember_specialist(&self, tx: &mut WriteTx, s: &AgentSession) -> Result<()> {
+    pub(super) async fn remember_specialist(
+        &self,
+        tx: &mut WriteTx,
+        s: &AgentSession,
+    ) -> Result<()> {
         sqlx::query(
             "INSERT INTO settings (tenant_id, key, value) VALUES ($1, $2, $3) \
              ON CONFLICT (tenant_id, key) DO UPDATE SET value = excluded.value",

@@ -3418,6 +3418,14 @@ async fn agent_methods(
                     "agentId: agent IDs are server-assigned and the field must be omitted",
                 ));
             }
+            // Planning remains an explicit developer Services lane until the
+            // matching wire capability and transport gates are qualified. A
+            // caller's source constraint must never be silently discarded.
+            if params.get("expectedTaskRevision").is_some() {
+                return Err(invalid_params(
+                    "expectedTaskRevision is unavailable without the taskPlanning capability",
+                ));
+            }
             if let Some(message) = intent_core::placement::misplaced_member(params) {
                 return Err(invalid_params(message));
             }
@@ -3450,6 +3458,7 @@ async fn agent_methods(
             // default. The blank is dropped downstream, so the persisted
             // field is still `NULL` either way.
             let extra = AgentCreateExtra {
+                expected_task_revision: None,
                 remember_specialist: opt_bool_strict(params, "rememberSpecialist")?
                     .unwrap_or(false),
                 provider: opt_nonempty_str(params, "provider"),

@@ -117,10 +117,17 @@ pub(crate) async fn remember_agent_specialist(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     session: &intent_core::AgentSession,
 ) -> Result<()> {
+    remember_agent_specialist_on(tx, session).await
+}
+
+pub(crate) async fn remember_agent_specialist_on(
+    connection: &mut sqlx::SqliteConnection,
+    session: &intent_core::AgentSession,
+) -> Result<()> {
     sqlx::query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         .bind(agent_creation_preferences_key(&session.workspace_id))
         .bind(serde_json::json!({"specialistId": session.specialist}).to_string())
-        .execute(&mut **tx)
+        .execute(connection)
         .await
         .map_err(|e| Error::Internal(format!("remember agent specialist failed: {e}")))?;
     Ok(())

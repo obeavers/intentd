@@ -1089,7 +1089,7 @@ pub(crate) fn effort_levels_from_db(raw: Option<String>) -> Result<Option<Vec<St
 /// [`Store::insert_agent_session_with_messages`] so the column/bind pairing
 /// lives in one place. The harness stamp (`harness_version` /
 /// `harness_features`) binds from the session struct itself.
-fn bind_session_insert<'q>(
+pub(crate) fn bind_session_insert<'q>(
     query: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments>,
     s: &'q AgentSession,
     task_graph_enabled: bool,

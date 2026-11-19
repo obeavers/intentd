@@ -40,6 +40,12 @@ impl WorktreeLocks {
         map.entry(path.to_path_buf()).or_default().clone()
     }
 
+    /// Acquire the same per-path lock as [`Self::with_lock`], retaining its
+    /// ownership when the guard moves into an owned asynchronous or blocking task.
+    pub async fn acquire_owned(&self, path: &Path) -> tokio::sync::OwnedMutexGuard<()> {
+        self.lock_for(path).lock_owned().await
+    }
+
     /// Try the SAME registry and per-path lock. Busy or poisoned maps omit the
     /// optional operation without invoking its closure or waiting for a writer.
     pub async fn try_with_lock<F, Fut, T>(&self, path: &Path, f: F) -> Option<T>
@@ -883,6 +889,23 @@ mod tests {
         }
         // The critical section was never entered concurrently.
         assert_eq!(max_seen.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn owned_guard_uses_the_shared_path_registry_until_it_drops() {
+        let locks = WorktreeLocks::new();
+        let path = Path::new("owned-worktree-lock");
+        let other = Path::new("independent-worktree-lock");
+        let guard = locks.acquire_owned(path).await;
+        assert!(locks.try_with_lock(path, || async { true }).await.is_none());
+        assert_eq!(locks.try_with_lock(other, || async { 42 }).await, Some(42));
+        let cloned = locks.clone();
+        assert!(cloned
+            .try_with_lock(path, || async { true })
+            .await
+            .is_none());
+        drop(guard);
+        assert_eq!(cloned.try_with_lock(path, || async { 7 }).await, Some(7));
     }
 
     #[tokio::test]

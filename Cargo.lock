@@ -2310,6 +2310,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "intent-atomic"
+version = "0.11.253"
+dependencies = [
+ "async-trait",
+ "intent-atomic-proto",
+ "intent-core",
+ "intentd-test-support",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "intent-atomic-proto"
+version = "0.11.253"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "intent-context"
 version = "0.11.253"
 dependencies = [
@@ -2353,6 +2379,7 @@ dependencies = [
  "intent-core",
  "intentd-test-support",
  "libc",
+ "nix 0.31.3",
  "rcgen",
  "reqwest 0.12.28",
  "rustls",
@@ -2484,6 +2511,8 @@ dependencies = [
  "ignore",
  "image",
  "intent-acp",
+ "intent-atomic",
+ "intent-atomic-proto",
  "intent-context",
  "intent-core",
  "intent-git",

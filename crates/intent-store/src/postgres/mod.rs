@@ -73,6 +73,7 @@ mod script_monitors;
 mod scripts;
 mod settings;
 mod tenant_registry;
+pub(crate) mod tracer_evidence;
 mod usage_metrics;
 mod workspaces;
 
@@ -1003,6 +1004,9 @@ mod tests {
         if PREFIXES.iter().any(|p| code.starts_with(p)) {
             return true;
         }
+        if code.starts_with("INSERT INTO ") {
+            return insert_ignores_existing_rows(&code);
+        }
         if code.starts_with("DROP ") {
             return code.split(' ').nth(2) == Some("IF") || code.contains(" IF EXISTS ");
         }
@@ -1022,6 +1026,37 @@ mod tests {
             .strip_prefix("DROP CONSTRAINT IF EXISTS ")
             .and_then(|a| a.split_once(", ADD CONSTRAINT "))
             .is_some_and(|(dropped, added)| added.starts_with(&format!("{dropped} ")))
+    }
+
+    /// Recognize the simple, unquoted seed form used by migrations. Refuse
+    /// strings and comments rather than mistaking their text for a SQL clause.
+    fn insert_ignores_existing_rows(code: &str) -> bool {
+        if code.contains(['\'', '"', '$']) || code.contains("--") || code.contains("/*") {
+            return false;
+        }
+        let Some(body) = code.strip_suffix(" DO NOTHING;") else {
+            return false;
+        };
+        if body.contains(';') {
+            return false;
+        }
+        let Some((_, target)) = body.rsplit_once(" ON CONFLICT") else {
+            return false;
+        };
+        let Some(columns) = target
+            .trim()
+            .strip_prefix('(')
+            .and_then(|target| target.strip_suffix(')'))
+        else {
+            return false;
+        };
+        columns.split(',').all(|column| {
+            let mut bytes = column.trim().bytes();
+            bytes
+                .next()
+                .is_some_and(|first| first.is_ascii_alphabetic() || first == b'_')
+                && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        })
     }
 
     /// `migrate` records progress after each statement commits, so a crash
@@ -1062,6 +1097,13 @@ mod tests {
             "ALTER TABLE t ADD COLUMN y int;",
             "DROP INDEX i;",
             "TRUNCATE t;",
+            "INSERT INTO t (x) VALUES (1);",
+            "INSERT INTO t (x) VALUES (1) ON CONFLICT (x) DO UPDATE SET x = 2;",
+            "INSERT INTO t (x) VALUES (' ON CONFLICT (x) DO NOTHING;');",
+            "INSERT INTO t (x) VALUES ($$ ON CONFLICT (x) DO NOTHING;$$);",
+            "INSERT INTO t (x) VALUES (1); -- ON CONFLICT (x) DO NOTHING;",
+            "INSERT INTO t (x) VALUES (1) /* ON CONFLICT (x) DO NOTHING; */",
+            "INSERT INTO t (x) VALUES (1) ON CONFLICT (lower(x)) DO NOTHING;",
         ] {
             assert!(!rerunnable(one_shot), "{one_shot}");
         }
@@ -1069,6 +1111,8 @@ mod tests {
             "-- why\nCREATE TABLE IF NOT EXISTS t (x int);",
             "ALTER TABLE t DROP CONSTRAINT IF EXISTS c, ADD CONSTRAINT c FOREIGN KEY (x) REFERENCES u (x);",
             "DROP INDEX IF EXISTS i;",
+            "INSERT INTO t (x) VALUES (1) ON CONFLICT (x) DO NOTHING;",
+            "INSERT INTO t (tenant_id, x) SELECT tenant_id, x FROM source ON CONFLICT(tenant_id,x) DO NOTHING;",
         ] {
             assert!(rerunnable(safe), "{safe}");
         }
