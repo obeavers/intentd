@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","error":{"code":-32603,"message":"Internal error","data":"revspec 'refs/heads/feature/missing' not found"},"id":1}

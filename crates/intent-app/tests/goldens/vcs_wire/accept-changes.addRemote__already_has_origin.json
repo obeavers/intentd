@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","error":{"code":-32603,"message":"Internal error","data":"Invalid remote URL. Accepted formats: https://, http://, git@host:path, ssh://, or git://"},"id":1}

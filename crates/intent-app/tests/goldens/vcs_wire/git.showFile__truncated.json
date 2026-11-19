@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","result":{"content":"pub fn one() -> u32 {\n    1\n}\n\npub fn two() -> u32 {\n    2\n}\n","truncated":false,"totalBytes":61},"id":1}

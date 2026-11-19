@@ -436,6 +436,119 @@ pub fn resolve_workspace_boundary_snapshot(
     Ok(None)
 }
 
+/// Ref observations that certify one history range. Missing boundary refs keep
+/// their positions, so callers can distinguish a missing origin from local base.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HistoryRefreshInputs {
+    pub head: Oid,
+    pub branch: String,
+    pub upstream: Option<Oid>,
+    pub boundary_refs: Vec<Option<Oid>>,
+    pub fallback_oid: Option<Oid>,
+}
+
+/// A coherent capture of immutable history objects and their observed refs.
+#[derive(Debug, Clone)]
+pub struct HistoryRefreshCapture {
+    pub inputs: HistoryRefreshInputs,
+    pub history: HistorySnapshot,
+}
+
+/// Capture the refs and boundary for one versioned history read. A shallow
+/// graph, missing required boundary, inaccessible object or ref movement yields
+/// `None`; it must not be presented as an empty history.
+#[must_use]
+pub fn capture_history_refresh(
+    worktree: &Path,
+    base_ref: Option<&str>,
+    base_commit_sha: Option<&str>,
+) -> Option<HistoryRefreshCapture> {
+    capture_history_refresh_with(worktree, base_ref, base_commit_sha, |repo, inputs| {
+        resolve_workspace_boundary_snapshot(repo, inputs).ok()
+    })
+}
+
+fn capture_history_refresh_with(
+    worktree: &Path,
+    base_ref: Option<&str>,
+    base_commit_sha: Option<&str>,
+    resolve_boundary: impl FnOnce(&Repository, &WorkspaceBoundarySnapshot) -> Option<Option<Oid>>,
+) -> Option<HistoryRefreshCapture> {
+    let repo = Repository::open(worktree).ok()?;
+    // Deepening changes the visible graph without changing refs.
+    if repo.is_shallow() {
+        return None;
+    }
+    let inputs = history_refresh_inputs(&repo, base_ref, base_commit_sha)?;
+    let boundary_inputs = WorkspaceBoundarySnapshot {
+        head: inputs.head,
+        base_candidates: inputs.boundary_refs.iter().flatten().copied().collect(),
+        fallback: inputs.fallback_oid,
+    };
+    let boundary = resolve_boundary(&repo, &boundary_inputs)?;
+    if (base_ref.is_some() || base_commit_sha.is_some()) && boundary.is_none() {
+        return None;
+    }
+    if inputs != history_refresh_inputs(&repo, base_ref, base_commit_sha)? {
+        return None;
+    }
+    if let Some(upstream) = inputs.upstream {
+        repo.find_commit(upstream).ok()?;
+    }
+    let history = HistorySnapshot {
+        head: inputs.head,
+        boundary,
+        upstream: inputs.upstream,
+    };
+    Some(HistoryRefreshCapture { inputs, history })
+}
+
+fn history_refresh_inputs(
+    repo: &Repository,
+    base_ref: Option<&str>,
+    base_commit_sha: Option<&str>,
+) -> Option<HistoryRefreshInputs> {
+    let head = repo.head().ok()?;
+    let head_oid = head.peel_to_commit().ok()?.id();
+    let branch = if head.is_branch() {
+        head.shorthand().unwrap_or("")
+    } else {
+        ""
+    };
+    // Detached HEAD never borrows a workspace's display branch.
+    let upstream = if branch.is_empty() {
+        None
+    } else {
+        match repo.find_reference(&format!("refs/remotes/origin/{branch}")) {
+            Ok(reference) => reference.target(),
+            Err(error) if error.code() == git2::ErrorCode::NotFound => None,
+            Err(_) => return None,
+        }
+    };
+    let resolve = |name: &str| match repo.revparse_single(name) {
+        Ok(object) => Some(Some(object.peel_to_commit().ok()?.id())),
+        Err(error) if error.code() == git2::ErrorCode::NotFound => Some(None),
+        Err(_) => None,
+    };
+    let mut boundary_refs = Vec::new();
+    if let Some(base) = base_ref {
+        for name in [format!("origin/{base}"), base.to_string()] {
+            boundary_refs.push(resolve(&name)?);
+        }
+    }
+    let fallback_oid = match base_commit_sha {
+        Some(name) => resolve(name)?,
+        None => None,
+    };
+    Some(HistoryRefreshInputs {
+        head: head_oid,
+        branch: branch.to_string(),
+        upstream,
+        boundary_refs,
+        fallback_oid,
+    })
+}
+
 /// Read history bounded by a workspace boundary (for `file-tracking.loadCommits`).
 ///
 /// Returns commits in the range `boundary..HEAD` (workspace-owned only) when
@@ -645,6 +758,132 @@ mod tests {
     use super::*;
     use crate::testutil::{commit_file, init_repo};
     use std::process::Command;
+
+    fn refresh_repo(tag: &str) -> crate::testutil::TempDir {
+        let dir = init_repo(tag);
+        Repository::open(dir.path())
+            .unwrap()
+            .set_head("refs/heads/main")
+            .unwrap();
+        commit_file(dir.path(), "seed.txt", "seed\n");
+        dir
+    }
+
+    #[test]
+    fn refresh_capture_freezes_boundary_during_aba() {
+        let dir = refresh_repo("refresh-boundary-aba");
+        let repo = Repository::open(dir.path()).unwrap();
+        let root = repo.head().unwrap().peel_to_commit().unwrap();
+        commit_file(dir.path(), "trunk.txt", "trunk\n");
+        let trunk = repo.head().unwrap().target().unwrap();
+        crate::testutil::create_branch(dir.path(), "feature/aba");
+        crate::testutil::checkout_branch(dir.path(), "feature/aba");
+        commit_file(dir.path(), "feature.txt", "feature\n");
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        let expected = capture_history_refresh(dir.path(), Some("main"), None).unwrap();
+        let snapshot = capture_history_refresh_with(
+            dir.path(),
+            Some("main"),
+            None,
+            |snapshot_repo, inputs| {
+                repo.reset(root.as_object(), git2::ResetType::Hard, None)
+                    .unwrap();
+                let boundary = resolve_workspace_boundary_snapshot(snapshot_repo, inputs).unwrap();
+                repo.reset(head.as_object(), git2::ResetType::Hard, None)
+                    .unwrap();
+                Some(boundary)
+            },
+        )
+        .unwrap();
+        assert_eq!(snapshot.inputs, expected.inputs);
+        assert_eq!(snapshot.history.boundary, Some(trunk));
+        let page =
+            history_bounded_snapshot(dir.path(), &snapshot.history, 50, false, false).unwrap();
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].hash, head.id().to_string());
+    }
+
+    #[test]
+    fn refresh_capture_freezes_base_candidates_and_fallback() {
+        for base_name in [
+            "refs/remotes/origin/base",
+            "refs/heads/base",
+            "refs/heads/fallback",
+        ] {
+            let dir = refresh_repo("refresh-base-input-aba");
+            let repo = Repository::open(dir.path()).unwrap();
+            let root = repo.head().unwrap().target().unwrap();
+            commit_file(dir.path(), "trunk.txt", "trunk\n");
+            let trunk = repo.head().unwrap().target().unwrap();
+            commit_file(dir.path(), "feature.txt", "feature\n");
+            let head = repo.head().unwrap().target().unwrap();
+            let root_name = root.to_string();
+            let (base_ref, fallback) = if base_name.ends_with("fallback") {
+                (None, "fallback")
+            } else {
+                if base_name.contains("origin") {
+                    repo.reference("refs/heads/base", root, true, "local base")
+                        .unwrap();
+                }
+                (Some("base"), root_name.as_str())
+            };
+            repo.reference(base_name, trunk, true, "captured base")
+                .unwrap();
+            let expected = capture_history_refresh(dir.path(), base_ref, Some(fallback)).unwrap();
+            let snapshot = capture_history_refresh_with(
+                dir.path(),
+                base_ref,
+                Some(fallback),
+                |repo, inputs| {
+                    repo.reference(base_name, root, true, "transient base")
+                        .unwrap();
+                    let boundary = resolve_workspace_boundary_snapshot(repo, inputs).unwrap();
+                    repo.reference(base_name, trunk, true, "restore base")
+                        .unwrap();
+                    Some(boundary)
+                },
+            )
+            .unwrap();
+            assert_eq!(snapshot.inputs, expected.inputs, "{base_name}");
+            assert_eq!(snapshot.history.boundary, Some(trunk), "{base_name}");
+            let page =
+                history_bounded_snapshot(dir.path(), &snapshot.history, 50, false, false).unwrap();
+            assert_eq!(page.len(), 1, "{base_name}");
+            assert_eq!(page[0].hash, head.to_string());
+        }
+    }
+
+    #[test]
+    fn refresh_capture_rejects_ref_movement_and_failed_resolution() {
+        let dir = refresh_repo("refresh-race");
+        assert!(
+            capture_history_refresh_with(dir.path(), Some("main"), None, |_, _| None).is_none()
+        );
+        let raced = capture_history_refresh_with(dir.path(), Some("main"), None, |repo, inputs| {
+            let boundary = resolve_workspace_boundary_snapshot(repo, inputs).unwrap();
+            commit_file(dir.path(), "next.txt", "next\n");
+            Some(boundary)
+        });
+        assert!(raced.is_none());
+        let head = Repository::open(dir.path())
+            .unwrap()
+            .head()
+            .unwrap()
+            .target()
+            .unwrap();
+        let raced = capture_history_refresh_with(dir.path(), Some("main"), None, |repo, _| {
+            repo.reference(
+                "refs/remotes/origin/main",
+                head,
+                true,
+                "push during resolve",
+            )
+            .unwrap();
+            Some(Some(head))
+        });
+        assert!(raced.is_none());
+        assert!(capture_history_refresh(dir.path(), Some("main"), None).is_some());
+    }
 
     #[test]
     fn empty_repo_has_no_history() {

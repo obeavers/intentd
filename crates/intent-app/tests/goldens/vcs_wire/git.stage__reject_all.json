@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","error":{"code":-32603,"message":"Internal error","data":"Staging all files is not allowed. Please specify individual file paths to stage. Use git_status to see which files you have modified, then stage only those specific files."},"id":1}

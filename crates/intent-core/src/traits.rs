@@ -1914,6 +1914,36 @@ pub trait WorkspaceApi: Send + Sync {
         })
     }
 
+    /// `task.configureWorkDefinition`: an authenticated human confirms exact
+    /// criterion source and requirements under one note CAS. The returned
+    /// original revision can fence a subsequent first-turn agent creation.
+    fn task_configure_work_definition(
+        &self,
+        workspace_id: WorkspaceId,
+        note_id: NoteId,
+        input: crate::work_evidence::planning::TaskConfigureWorkDefinitionInput,
+    ) -> BoxFuture<'_, Result<crate::work_evidence::planning::TaskConfigureWorkDefinitionResult>>
+    {
+        let _ = (workspace_id, note_id, input);
+        Box::pin(async { Err(Error::Unsupported("Task planning is unavailable".into())) })
+    }
+
+    /// `task.workEvidence`: member-authorized bounded original confirmed-run
+    /// index or actual first-admission summaries. Reads grant no authority.
+    fn task_work_evidence(
+        &self,
+        workspace_id: WorkspaceId,
+        note_id: NoteId,
+        query: crate::task_work_evidence::TaskWorkEvidenceQuery,
+    ) -> BoxFuture<'_, Result<crate::task_work_evidence::TaskWorkEvidenceResult>> {
+        let _ = (workspace_id, note_id, query);
+        Box::pin(async {
+            Err(Error::Unsupported(
+                "Retained task evidence is unavailable".into(),
+            ))
+        })
+    }
+
     /// `task.setRelations`: replace a task's `dependsOn` / `conflictsWith`
     /// relation lists (PROTOCOL §5.4). `None` keeps the existing list;
     /// `Some(vec![])` clears it. Ids are validated (must be task notes in the
@@ -9935,6 +9965,8 @@ pub struct RetrievedItem {
 #[serde(rename_all = "camelCase")]
 pub struct RetrieveResult {
     pub items: Vec<RetrievedItem>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_basis: Option<crate::knowledge::QueryReadBasis>,
 }
 
 /// Errors raised by a [`ContextEngine`] (§8.1, §11.1). Construction never fails

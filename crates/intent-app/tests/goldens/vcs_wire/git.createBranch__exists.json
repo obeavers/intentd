@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","error":{"code":-32603,"message":"Internal error","data":"failed to write reference 'refs/heads/feature/side': a reference with that name already exists."},"id":1}

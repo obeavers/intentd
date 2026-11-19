@@ -55,7 +55,7 @@ pub fn safe_relative_path(path: &str) -> bool {
             .all(|p| matches!(p, Component::Normal(_)))
 }
 
-fn excluded(path: &Path, options: &CaptureOptions) -> bool {
+pub(crate) fn excluded(path: &Path, options: &CaptureOptions) -> bool {
     [
         ".intent/attachments",
         "tool-outputs",
@@ -129,7 +129,7 @@ pub fn write_wip(
 
 #[derive(PartialEq, Eq)]
 struct Cut {
-    head: Oid,
+    head: Option<Oid>,
     branch: Option<String>,
     index_bytes: Option<Vec<u8>>,
     index_tree: Oid,
@@ -147,6 +147,10 @@ fn path_from_bytes(bytes: &[u8]) -> PathBuf {
 }
 
 fn read_cut(path: &Path, options: &CaptureOptions) -> Result<Cut> {
+    read_cut_inner(path, options, false)
+}
+
+fn read_cut_inner(path: &Path, options: &CaptureOptions, allow_unborn: bool) -> Result<Cut> {
     let repo = Repository::open(path).map_err(map_git_err)?;
     let config = repo.config().map_err(map_git_err)?;
     if config
@@ -155,12 +159,28 @@ fn read_cut(path: &Path, options: &CaptureOptions) -> Result<Cut> {
     {
         return Err(invalid("only SHA-1 repositories are supported"));
     }
-    let head_ref = repo.head().map_err(|_| invalid("unborn HEAD"))?;
-    let head = head_ref.peel_to_commit().map_err(map_git_err)?;
-    let branch = if head_ref.is_branch() {
-        Some(head_ref.shorthand().map_err(map_git_err)?.to_owned())
-    } else {
-        None
+    let head_ref = match repo.head() {
+        Ok(head) => Some(head),
+        Err(error) if allow_unborn && error.code() == git2::ErrorCode::UnbornBranch => None,
+        Err(_) => return Err(invalid("unborn HEAD")),
+    };
+    let head = head_ref
+        .as_ref()
+        .map(git2::Reference::peel_to_commit)
+        .transpose()
+        .map_err(map_git_err)?;
+    let branch = match head_ref.as_ref() {
+        Some(head_ref) if head_ref.is_branch() => {
+            Some(head_ref.shorthand().map_err(map_git_err)?.to_owned())
+        }
+        Some(_) => None,
+        None => repo
+            .find_reference("HEAD")
+            .map_err(map_git_err)?
+            .symbolic_target()
+            .map_err(map_git_err)?
+            .and_then(|reference| reference.strip_prefix("refs/heads/"))
+            .map(str::to_string),
     };
     let workdir = repo.workdir().ok_or_else(|| invalid("bare source"))?;
     let mut index = repo.index().map_err(map_git_err)?;
@@ -174,9 +194,11 @@ fn read_cut(path: &Path, options: &CaptureOptions) -> Result<Cut> {
         return Err(invalid("unresolved index conflicts"));
     }
     let mut head_index = Index::new().map_err(map_git_err)?;
-    head_index
-        .read_tree(&head.tree().map_err(map_git_err)?)
-        .map_err(map_git_err)?;
+    if let Some(head) = &head {
+        head_index
+            .read_tree(&head.tree().map_err(map_git_err)?)
+            .map_err(map_git_err)?;
+    }
     for entry in index.iter().chain(head_index.iter()) {
         if excluded(&path_from_bytes(&entry.path), options) {
             return Err(invalid("runtime-owned material is tracked"));
@@ -301,7 +323,7 @@ fn read_cut(path: &Path, options: &CaptureOptions) -> Result<Cut> {
     }
     let work_tree = index.write_tree().map_err(map_git_err)?;
     Ok(Cut {
-        head: head.id(),
+        head: head.map(|head| head.id()),
         branch,
         index_bytes,
         index_tree,
@@ -318,6 +340,24 @@ pub fn capture(path: &Path, options: &CaptureOptions) -> Result<Snapshot> {
     capture_checked(path, options, || Ok(()))
 }
 
+/// Raw-byte trees for a known unborn repository, with the same exclusion and
+/// stability checks as format-1 captures. Does not invent authored commits.
+pub(crate) fn capture_unborn(path: &Path, options: &CaptureOptions) -> Result<(String, String)> {
+    for path in &options.excluded_paths {
+        if !path.to_str().is_some_and(safe_relative_path) {
+            return Err(invalid("invalid excluded path"));
+        }
+    }
+    let cut = read_cut_inner(path, options, true)?;
+    if cut.head.is_some() {
+        return Err(invalid("repository is no longer unborn"));
+    }
+    if read_cut_inner(path, options, true)? != cut {
+        return Err(invalid("source changed during capture"));
+    }
+    Ok((cut.index_tree.to_string(), cut.work_tree.to_string()))
+}
+
 fn capture_checked(
     path: &Path,
     options: &CaptureOptions,
@@ -330,16 +370,17 @@ fn capture_checked(
     }
     let cut = read_cut(path, options)?;
     let repo = Repository::open(path).map_err(map_git_err)?;
-    let (index, wip) = write_wip(&repo, cut.head, cut.index_tree, cut.work_tree)?;
+    let head = cut.head.ok_or_else(|| invalid("unborn HEAD"))?;
+    let (index, wip) = write_wip(&repo, head, cut.index_tree, cut.work_tree)?;
     between()?;
     if read_cut(path, options)? != cut {
         return Err(invalid("source changed during capture"));
     }
-    let clean = repo.find_commit(cut.head).map_err(map_git_err)?.tree_id() == cut.work_tree
+    let clean = repo.find_commit(head).map_err(map_git_err)?.tree_id() == cut.work_tree
         && cut.work_tree == cut.index_tree;
     Ok(Snapshot {
         object_format: "sha1".into(),
-        head: cut.head.to_string(),
+        head: head.to_string(),
         index: index.to_string(),
         wip: (!clean).then(|| wip.to_string()),
         branch: cut.branch,
@@ -355,7 +396,7 @@ pub fn verify_source(path: &Path, snapshot: &Snapshot, options: &CaptureOptions)
     let repo = Repository::open(path).map_err(map_git_err)?;
     let (head, index, work) = validate(&repo, snapshot)?;
     if (cut.head, cut.index_tree, cut.work_tree, cut.branch)
-        != (head, index, work, snapshot.branch.clone())
+        != (Some(head), index, work, snapshot.branch.clone())
     {
         return Err(invalid("source changed during capture"));
     }
@@ -373,7 +414,7 @@ fn oid(value: &str) -> Result<Oid> {
     Oid::from_str(value).map_err(map_git_err)
 }
 
-fn validate(repo: &Repository, snapshot: &Snapshot) -> Result<(Oid, Oid, Oid)> {
+pub(crate) fn validate(repo: &Repository, snapshot: &Snapshot) -> Result<(Oid, Oid, Oid)> {
     if snapshot.object_format != "sha1" {
         return Err(invalid("unsupported object format"));
     }
@@ -412,7 +453,7 @@ fn validate(repo: &Repository, snapshot: &Snapshot) -> Result<(Oid, Oid, Oid)> {
     Ok((head.id(), index.tree_id(), work))
 }
 
-fn copy_objects(source: &Repository, target: &Repository, roots: &[Oid]) -> Result<()> {
+pub(crate) fn copy_objects(source: &Repository, target: &Repository, roots: &[Oid]) -> Result<()> {
     let source_odb = source.odb().map_err(map_git_err)?;
     let target_odb = target.odb().map_err(map_git_err)?;
     let mut seen = HashSet::new();

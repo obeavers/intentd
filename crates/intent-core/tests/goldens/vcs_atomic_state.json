@@ -1,0 +1,8 @@
+{
+  "kind": "atomic",
+  "repositoryId": "dc07d23a-bb24-4221-a90b-78112dd7e831",
+  "view": "ws-review",
+  "effectiveState": "frozen-closure-identity",
+  "ownMerkle": "own-merkle-identity",
+  "manifest": "retained-state-manifest-digest"
+}

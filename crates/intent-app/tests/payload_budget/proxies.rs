@@ -678,6 +678,7 @@ impl intent_core::ContextEngine for OversizedContext {
                     score: Some(1.0 / f64::from(u32::try_from(i + 1).unwrap_or(u32::MAX))),
                 })
                 .collect(),
+            read_basis: None,
         })
     }
 }

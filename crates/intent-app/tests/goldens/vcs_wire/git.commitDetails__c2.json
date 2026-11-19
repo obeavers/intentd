@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","result":{"commitHash":"9aef0096746e59ef5fdb2f8c51bdb162bfd1c896","author":"Golden Author","authorEmail":"author@golden.invalid","date":"2026-01-01T00:01:00Z","message":"Add two()","files":["src/lib.rs"],"fileDetails":[{"path":"src/lib.rs","additions":4,"deletions":0}]},"id":1}

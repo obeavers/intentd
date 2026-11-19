@@ -49,6 +49,8 @@ pub struct DiffHunk {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileDiff {
     pub path: String,
+    pub old_mode: Option<u32>,
+    pub new_mode: Option<u32>,
     pub additions: usize,
     pub deletions: usize,
     pub is_binary: bool,
@@ -110,7 +112,6 @@ pub struct FileDiffWithHunks {
     pub hunks: Vec<DiffHunk>,
 }
 
-#[expect(clippy::similar_names)] // path vs the libgit2 patch - both domain terms
 /// Summaries for the index→workdir diff (staged + unstaged + untracked), without
 /// hunks. Use [`hunks_between`] with each file's blob SHAs to expand on demand.
 ///
@@ -130,6 +131,43 @@ pub fn diff_index_to_workdir(repo_path: &Path) -> Result<Vec<FileDiff>> {
     let diff = repo
         .diff_index_to_workdir(None, Some(&mut opts))
         .map_err(map_git_err)?;
+    diff_summaries_with_patch(&diff)
+}
+
+/// Diff HEAD to the complete current working tree, including index changes and
+/// untracked files. Unlike concatenating staged and unstaged diffs, this reports
+/// each path once against its recorded preimage.
+///
+/// # Errors
+/// Returns an error when the repository, HEAD tree, or diff cannot be read.
+pub(crate) fn diff_head_to_workdir_with_hunks(
+    repo_path: &Path,
+    pathspecs: Option<&[&str]>,
+) -> Result<Vec<FileDiffWithHunks>> {
+    let repo = Repository::open(repo_path).map_err(map_git_err)?;
+    let head_tree = match repo.head() {
+        Ok(head) => Some(head.peel_to_tree().map_err(map_git_err)?),
+        Err(error) if error.code() == git2::ErrorCode::UnbornBranch => None,
+        Err(error) => return Err(map_git_err(error)),
+    };
+    let mut opts = DiffOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .show_untracked_content(true);
+    if let Some(specs) = pathspecs {
+        opts.disable_pathspec_match(true);
+        for spec in specs {
+            opts.pathspec(spec);
+        }
+    }
+    let diff = repo
+        .diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut opts))
+        .map_err(map_git_err)?;
+    diff_with_hunks(&diff)
+}
+
+#[expect(clippy::similar_names)] // path vs the libgit2 patch - both domain terms
+fn diff_summaries_with_patch(diff: &git2::Diff<'_>) -> Result<Vec<FileDiff>> {
     let mut out = Vec::new();
     for i in 0..diff.deltas().len() {
         let delta = diff.get_delta(i).expect("delta index in range");
@@ -140,7 +178,7 @@ pub fn diff_index_to_workdir(repo_path: &Path) -> Result<Vec<FileDiff>> {
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
         let is_binary = delta.flags().is_binary();
-        let (additions, deletions) = match Patch::from_diff(&diff, i).map_err(map_git_err)? {
+        let (additions, deletions) = match Patch::from_diff(diff, i).map_err(map_git_err)? {
             Some(patch) => {
                 let (_ctx, adds, dels) = patch.line_stats().map_err(map_git_err)?;
                 (adds, dels)
@@ -152,6 +190,8 @@ pub fn diff_index_to_workdir(repo_path: &Path) -> Result<Vec<FileDiff>> {
             additions,
             deletions,
             is_binary,
+            old_mode: file_mode(delta.old_file().mode()),
+            new_mode: file_mode(delta.new_file().mode()),
             old_blob: oid_to_opt(delta.old_file().id()),
             new_blob: oid_to_opt(delta.new_file().id()),
             old_is_gitlink: delta.old_file().mode() == FileMode::Commit,
@@ -161,7 +201,6 @@ pub fn diff_index_to_workdir(repo_path: &Path) -> Result<Vec<FileDiff>> {
     Ok(out)
 }
 
-#[expect(clippy::similar_names)] // path vs the libgit2 patch - both domain terms
 /// Per-file summaries **and** hunks for the index→workdir diff (staged +
 /// unstaged + untracked), from a **single** diff traversal — unlike the
 /// two-pass combination of [`diff_index_to_workdir`] +
@@ -199,6 +238,11 @@ pub fn diff_index_to_workdir_with_hunks(
     let diff = repo
         .diff_index_to_workdir(None, Some(&mut opts))
         .map_err(map_git_err)?;
+    diff_with_hunks(&diff)
+}
+
+#[expect(clippy::similar_names)] // path vs the libgit2 patch - both domain terms
+fn diff_with_hunks(diff: &git2::Diff<'_>) -> Result<Vec<FileDiffWithHunks>> {
     let mut out = Vec::new();
     for i in 0..diff.deltas().len() {
         let delta = diff.get_delta(i).expect("delta index in range");
@@ -209,7 +253,7 @@ pub fn diff_index_to_workdir_with_hunks(
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
         let is_binary = delta.flags().is_binary();
-        let (additions, deletions, hunks) = match Patch::from_diff(&diff, i).map_err(map_git_err)? {
+        let (additions, deletions, hunks) = match Patch::from_diff(diff, i).map_err(map_git_err)? {
             Some(patch) => {
                 let (_ctx, adds, dels) = patch.line_stats().map_err(map_git_err)?;
                 (adds, dels, patch_to_hunks(&patch)?)
@@ -222,6 +266,8 @@ pub fn diff_index_to_workdir_with_hunks(
                 additions,
                 deletions,
                 is_binary,
+                old_mode: file_mode(delta.old_file().mode()),
+                new_mode: file_mode(delta.new_file().mode()),
                 old_blob: oid_to_opt(delta.old_file().id()),
                 new_blob: oid_to_opt(delta.new_file().id()),
                 old_is_gitlink: delta.old_file().mode() == FileMode::Commit,
@@ -353,6 +399,109 @@ pub fn diff_two_dot(repo_path: &Path, from_sha: &str, to_ref: &str) -> Result<Ve
         .diff_tree_to_tree(Some(&from_tree), Some(&to_tree), None)
         .map_err(map_git_err)?;
     diff_to_file_summaries(&diff)
+}
+
+/// Compare two exact retained tree identities. Unlike compatibility revspec
+/// reads, missing objects are an error rather than an empty comparison.
+#[derive(Debug, Clone)]
+pub(crate) struct TreeDelta {
+    pub path: String,
+    pub old_mode: Option<u32>,
+    pub new_mode: Option<u32>,
+    pub old_blob: Option<String>,
+    pub new_blob: Option<String>,
+    pub old_is_gitlink: bool,
+    pub new_is_gitlink: bool,
+}
+
+pub(crate) fn tree_deltas(
+    repo_path: &Path,
+    before: &str,
+    after: &str,
+    paths: &[String],
+) -> Result<Vec<TreeDelta>> {
+    let repo = Repository::open(repo_path).map_err(map_git_err)?;
+    let before = repo
+        .find_tree(Oid::from_str(before).map_err(map_git_err)?)
+        .map_err(map_git_err)?;
+    let after = repo
+        .find_tree(Oid::from_str(after).map_err(map_git_err)?)
+        .map_err(map_git_err)?;
+    let mut options = DiffOptions::new();
+    options
+        .disable_pathspec_match(true)
+        .include_typechange(true);
+    for path in paths {
+        options.pathspec(path);
+    }
+    let diff = repo
+        .diff_tree_to_tree(Some(&before), Some(&after), Some(&mut options))
+        .map_err(map_git_err)?;
+    diff.deltas()
+        .map(|delta| {
+            let path = delta
+                .new_file()
+                .path()
+                .or_else(|| delta.old_file().path())
+                .and_then(Path::to_str)
+                .ok_or_else(|| Error::InvalidInput("native comparison path must be UTF-8".into()))?
+                .to_string();
+            Ok(TreeDelta {
+                path,
+                old_mode: file_mode(delta.old_file().mode()),
+                new_mode: file_mode(delta.new_file().mode()),
+                old_blob: oid_to_opt(delta.old_file().id()),
+                new_blob: oid_to_opt(delta.new_file().id()),
+                old_is_gitlink: delta.old_file().mode() == FileMode::Commit,
+                new_is_gitlink: delta.new_file().mode() == FileMode::Commit,
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn hydrate_tree_delta(repo_path: &Path, delta: &TreeDelta) -> Result<FileDiffWithHunks> {
+    let mut file = FileDiff {
+        path: delta.path.clone(),
+        old_mode: delta.old_mode,
+        new_mode: delta.new_mode,
+        additions: 0,
+        deletions: 0,
+        is_binary: false,
+        old_blob: delta.old_blob.clone(),
+        new_blob: delta.new_blob.clone(),
+        old_is_gitlink: delta.old_is_gitlink,
+        new_is_gitlink: delta.new_is_gitlink,
+    };
+    if file.is_gitlink() {
+        let hunks = gitlink_hunks(file.gitlink_old_sha(), file.gitlink_new_sha());
+        return Ok(FileDiffWithHunks { file, hunks });
+    }
+    let repo = Repository::open(repo_path).map_err(map_git_err)?;
+    let odb = repo.odb().map_err(map_git_err)?;
+    for hash in [file.old_blob.as_deref(), file.new_blob.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        let (size, kind) = odb
+            .read_header(Oid::from_str(hash).map_err(map_git_err)?)
+            .map_err(map_git_err)?;
+        if kind != git2::ObjectType::Blob || size > 64 * 1024 * 1024 {
+            return Err(Error::InvalidInput(
+                "native comparison source exceeds its supported blob budget".into(),
+            ));
+        }
+    }
+    let old = load_blob_bytes(&repo, file.old_blob.as_deref())?;
+    let new = load_blob_bytes(&repo, file.new_blob.as_deref())?;
+    let patch = Patch::from_buffers(&old, None, &new, None, None).map_err(map_git_err)?;
+    file.is_binary = patch.delta().flags().is_binary();
+    let (_, additions, deletions) = patch.line_stats().map_err(map_git_err)?;
+    file.additions = additions;
+    file.deletions = deletions;
+    Ok(FileDiffWithHunks {
+        file,
+        hunks: patch_to_hunks(&patch)?,
+    })
 }
 
 /// Resolve the branch boundary the FE branch-base diff/numstat callers use:
@@ -547,6 +696,8 @@ fn diff_to_file_summaries(diff: &git2::Diff) -> Result<Vec<FileDiff>> {
             additions,
             deletions,
             is_binary,
+            old_mode: file_mode(delta.old_file().mode()),
+            new_mode: file_mode(delta.new_file().mode()),
             old_blob: oid_to_opt(delta.old_file().id()),
             new_blob: oid_to_opt(delta.new_file().id()),
             old_is_gitlink: delta.old_file().mode() == FileMode::Commit,
@@ -713,6 +864,10 @@ fn load_blob_bytes(repo: &Repository, sha: Option<&str>) -> Result<Vec<u8>> {
         }
         None => Ok(Vec::new()),
     }
+}
+
+fn file_mode(mode: FileMode) -> Option<u32> {
+    (mode != FileMode::Unreadable).then(|| u32::from(mode))
 }
 
 #[cfg(test)]

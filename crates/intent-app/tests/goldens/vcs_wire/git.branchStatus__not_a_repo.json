@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","error":{"code":-32602,"message":"Path is not a git repository: <ROOT>/plain","data":{"code":"invalid-params"}},"id":1}
