@@ -4387,3 +4387,12 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "pprof"
+version = "0.15.0"
+
+[[patch.unused]]
+name = "tokio-tungstenite"
+version = "0.30.0"
+source = "git+https://github.com/intent-hq/tokio-tungstenite-fork?branch=deflate#2bb58c8fbe4fe43ae5cc05b0885d6fd2fc3095c5"
