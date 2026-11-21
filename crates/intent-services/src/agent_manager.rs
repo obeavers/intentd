@@ -3755,12 +3755,22 @@ impl AgentManager {
     /// Number of currently-tracked agents spawned with the given provider id
     /// (e.g. `"unsloth"`), for `unsloth.status`'s `attachedAgentCount`.
     pub(crate) fn count_agents_with_provider(&self, provider_id: &str) -> usize {
+        self.agents_with_provider(provider_id).len()
+    }
+
+    /// Currently-tracked agents spawned under the given base provider id,
+    /// with the model each was spawned on. Keyed on the selection, not the
+    /// command: an `unsloth` agent runs `opencode`.
+    pub(crate) fn agents_with_provider(&self, provider_id: &str) -> Vec<(AgentId, Option<String>)> {
         self.handles
             .lock()
             .unwrap()
-            .values()
-            .filter(|h| h.spawned_provider == provider_id)
-            .count()
+            .iter()
+            .filter(|(_, h)| {
+                intent_providers::base_provider_id(&h.spawned_selection) == provider_id
+            })
+            .map(|(id, h)| (id.clone(), h.spawned_model.clone()))
+            .collect()
     }
 
     /// The daemon-owned singleton Unsloth server manager, for the
@@ -4229,12 +4239,13 @@ impl AgentManager {
         {
             // A named profile resolves before account lookup; the spawn layer
             // applies the same overlay to the prepared command.
-            let mut context = crate::installed_cli::InstalledContext::discover_for(
+            let mut context = crate::installed_cli::InstalledContext::discover_or_bundled(
                 cli,
                 spawn_opts.profile_env.cloned().map(Arc::new),
+                true,
             )
             .await
-            .map_err(Error::InvalidInput)?;
+            .map_err(|error| Error::InvalidInput(error.message))?;
             let prepared = prepare_installed_launch(&context, &spawn_opts)?;
             let prepared = intent_core::caller::spawn_with_current_caller(async move {
                 let prepared = Arc::new(prepared);
@@ -12402,8 +12413,21 @@ impl AgentManager {
                 crate::auggie_cli::select_auggie_for_spawn(explicit.as_deref())
             })
             .await
-            .map_err(|e| Error::Internal(format!("auggie version probe task failed: {e}")))??;
-            resolved.provider_binary = Some(selected);
+            .map_err(|e| Error::Internal(format!("auggie version probe task failed: {e}")))?;
+            match (
+                selected,
+                crate::provider_cli_launch::ProviderCli::npx("auggie"),
+            ) {
+                (Ok(selected), _) => resolved.provider_binary = Some(selected),
+                // Every installed auggie is too old: run the pinned package.
+                (Err(error), Some(crate::provider_cli_launch::ProviderCli::Npx { npx, .. })) => {
+                    tracing::warn!(%error, "installed auggie is too old; launching the pinned npm package");
+                    resolved.provider_binary = None;
+                    resolved.npx_fallback_binary = Some(npx);
+                    resolved.npx_fallback_package = resolved.provider.fallback_npx_package;
+                }
+                (Err(error), _) => return Err(error),
+            }
         }
         // `agy acp` needs agy `MIN_VERSION`+; a fresh spawn updates an older
         // agy first, as the Codex/Claude minimum does at launch.
@@ -26671,6 +26695,10 @@ mod quota_failover_tests;
 #[cfg(test)]
 #[path = "agent_manager/future_size_tests.rs"]
 mod future_size_tests;
+
+#[cfg(all(test, unix))]
+#[path = "agent_manager/unsloth_switch_tests.rs"]
+mod unsloth_switch_tests;
 
 /// Persistent launches under a named profile (PROTOCOL §5.54): the frozen
 /// command carries the profile over inherited and captured values, never over

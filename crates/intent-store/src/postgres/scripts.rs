@@ -533,6 +533,32 @@ impl PgStore {
         tx.commit().await.map_err(db)
     }
 
+    pub async fn set_script_auto_start(
+        &self,
+        workspace_id: &str,
+        id: &str,
+        auto_start: Option<bool>,
+        updated_at: &str,
+    ) -> Result<bool> {
+        let mut tx = self.begin_write().await?;
+        let changed = sqlx::query(
+            "UPDATE script SET auto_start = $4, updated_at = $5 \
+             WHERE tenant_id = $1 AND id = $2 AND workspace_id = $3",
+        )
+        .bind(self.tenant())
+        .bind(id)
+        .bind(workspace_id)
+        .bind(auto_start.map(i64::from))
+        .bind(updated_at)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| Error::Internal(format!("set script auto_start failed: {e}")))?
+        .rows_affected()
+            > 0;
+        tx.commit().await.map_err(db)?;
+        Ok(changed)
+    }
+
     pub async fn list_was_running_script_ids(&self) -> Result<Vec<(String, String)>> {
         let mut tx = self.begin().await?;
         let rows: Vec<(String, String)> = sqlx::query_as(
@@ -642,7 +668,9 @@ impl PgStore {
                  ORDER BY created_at COLLATE \"C\" DESC, id COLLATE \"C\" DESC LIMIT $6"
             )
         };
-        let mut tx = self.begin().await?;
+        // The page's keys and rows come from one snapshot, so a row archived
+        // in between cannot shorten the page.
+        let mut tx = self.begin_read_snapshot().await?;
         let mut keys: Vec<(String, String)> = sqlx::query_as(sqlx::AssertSqlSafe(keys_sql))
             .bind(self.tenant())
             .bind(ws.as_str())
@@ -653,6 +681,7 @@ impl PgStore {
             .fetch_all(&mut *tx)
             .await
             .map_err(list_db)?;
+        super::read_seam::probe::between(self.tenant(), "script_summary_page").await;
         let more = keys.len() > options.limit;
         keys.truncate(options.limit);
         let ids: Vec<&str> = keys.iter().map(|(_, id)| id.as_str()).collect();

@@ -110,6 +110,26 @@ pub fn violations(stmts: &[Statement], exempt: &[&str]) -> Vec<String> {
     rule.out
 }
 
+/// Whether `sql` (a rendered SET statement) sets a `__neki.` setting to
+/// a literal.
+fn is_neki_setting(sql: &str) -> bool {
+    let lower = sql.to_lowercase();
+    let Some(rest) = lower.strip_prefix("set __neki.") else {
+        return false;
+    };
+    let Some((name, value)) = rest.split_once('=') else {
+        return false;
+    };
+    let value = value.trim();
+    name.trim()
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        && value.len() >= 2
+        && value.starts_with('\'')
+        && value.ends_with('\'')
+        && !value[1..value.len() - 1].contains('\'')
+}
+
 /// Whether `text` is a statement (SELECT, INSERT, UPDATE, DELETE, WITH,
 /// MERGE, TRUNCATE), read as is or as a `format!` string with its holes
 /// filled.
@@ -167,6 +187,46 @@ pub fn written_tables(stmts: &[Statement]) -> Vec<String> {
 #[derive(Default)]
 struct Writes {
     tables: Vec<String>,
+}
+
+/// The functions the statements call, anywhere in them (`SELECT f($1)`,
+/// `FROM f($1)`, inside a CTE or a subquery). Names are lower-cased and
+/// without their schema (`public.f` is `f`), as the migrations define them.
+pub fn called_functions(stmts: &[Statement]) -> Vec<String> {
+    let mut calls = Calls::default();
+    for s in stmts {
+        let _ = s.visit(&mut calls);
+    }
+    calls.names
+}
+
+#[derive(Default)]
+struct Calls {
+    names: Vec<String>,
+}
+
+impl Visitor for Calls {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, e: &Expr) -> ControlFlow<()> {
+        if let Expr::Function(f) = e {
+            self.names.push(bare_name(&f.name));
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_table_factor(&mut self, t: &TableFactor) -> ControlFlow<()> {
+        match t {
+            TableFactor::Function { name, .. }
+            | TableFactor::Table {
+                name,
+                args: Some(_),
+                ..
+            } => self.names.push(bare_name(name)),
+            _ => {}
+        }
+        ControlFlow::Continue(())
+    }
 }
 
 impl Visitor for Writes {
@@ -270,6 +330,9 @@ impl Rule<'_> {
             }
             // The migration ledger's own table: schema, not tenant, data.
             Statement::CreateTable(c) if self.is_exempt(&c.name) => {}
+            // A Neki session setting (`SET __neki.tx_mode = ...`): it reads
+            // and writes no table. Any other SET stays unsupported.
+            Statement::Set(_) if is_neki_setting(&s.to_string()) => {}
             other => self.unsupported(&other.to_string()),
         }
     }
@@ -573,6 +636,12 @@ fn last_ident(name: &ObjectName) -> Option<String> {
         .last()
         .and_then(|p| p.as_ident())
         .map(|i| i.value.to_lowercase())
+}
+
+/// [`display_name`] without a schema qualifier.
+fn bare_name(name: &ObjectName) -> String {
+    let full = display_name(name);
+    full.rsplit('.').next().unwrap_or(&full).to_owned()
 }
 
 fn display_name(name: &ObjectName) -> String {

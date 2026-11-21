@@ -18,7 +18,7 @@ impl<'a> PgEvidenceTx<'a> {
         let connection = if write {
             Connection::Write(store.begin_write().await?)
         } else {
-            Connection::Read(store.begin().await?)
+            Connection::Read(store.begin_read_snapshot().await?)
         };
         Ok(Self { store, connection })
     }

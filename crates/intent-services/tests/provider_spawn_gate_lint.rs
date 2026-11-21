@@ -69,7 +69,6 @@ const SITES: &[(&str, Spawn)] = &[
         "acp_adapter.rs",
         Spawn::Provider(&[COMPLETE, MACHINE, SCRATCH, MODELS]),
     ),
-    ("agent_ops.rs", Spawn::Provider(&[MODELS])),
     (
         "atomic_tracer/fixture.rs",
         Spawn::Other("the developer tracer's fixed Node test, never a provider run"),
@@ -123,7 +122,7 @@ const SITES: &[(&str, Spawn)] = &[
     ),
     ("provider_auth.rs", Spawn::Provider(&[AUTH, PROFILE_AUTH])),
     ("provider_cli.rs", Spawn::Provider(&[DISCOVERY])),
-    ("provider_models/mod.rs", Spawn::Provider(&[MODELS])),
+    ("provider_cli_launch.rs", Spawn::Provider(&[MODELS, AUTH])),
     (
         "provider_version.rs",
         Spawn::Provider(&[DISCOVERY, REPORT, STATUSES]),

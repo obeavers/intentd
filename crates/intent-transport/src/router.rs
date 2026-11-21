@@ -341,13 +341,13 @@ fn domain_to_rpc(e: Error) -> RpcErr {
         // An exposed-machine request failed (`machine-unreachable` with the
         // routes tried, `machine-revoked`, `machine-in-use`): the
         // service-built `data` verbatim.
-        ref e @ (Error::RemoteMachine(ref failure) | Error::ProviderProfile(ref failure)) => {
-            RpcErr {
-                code: e.code(),
-                message: failure.message.clone(),
-                data: Some(failure.data.clone()),
-            }
-        }
+        ref e @ (Error::RemoteMachine(ref failure)
+        | Error::ProviderProfile(ref failure)
+        | Error::ConfirmationRequired(ref failure)) => RpcErr {
+            code: e.code(),
+            message: failure.message.clone(),
+            data: Some(failure.data.clone()),
+        },
         // Classified clone/provisioning failure: human message carries the
         // sanitized git stderr tail, `data.code` carries the machine-readable
         // category so clients stop showing a bare "Internal error"
@@ -3623,6 +3623,19 @@ async fn agent_methods(
                 .await
                 .map_err(domain_to_rpc)?;
             Ok(result)
+        }
+        "agent.rpcMethods" => {
+            let methods = crate::agent_rpc::agent_rpc_methods();
+            Ok(json!({ "count": methods.len(), "methods": methods }))
+        }
+        "agent.resolveRpcProposal" => {
+            let agent_id = require_agent_id(params)?;
+            let proposal_id = require_str_param(params, "proposalId")?;
+            let decision = require_str_param(params, "decision")?;
+            let ws = require_ws_note(params)?;
+            api.agent_resolve_rpc_proposal(ws, agent_id, proposal_id, decision)
+                .await
+                .map_err(domain_to_rpc)
         }
         "agent.markSeen" => {
             let agent_id = require_agent_id(params)?;

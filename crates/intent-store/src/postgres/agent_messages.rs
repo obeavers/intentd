@@ -18,8 +18,7 @@ use std::fmt::Write as _;
 use intent_core::{
     AgentId, AgentListRowScope, AgentMessage, AgentSession, Error, Result, WorkspaceId,
 };
-use sqlx::postgres::{PgConnection, PgRow, Postgres};
-use sqlx::Transaction;
+use sqlx::postgres::{PgConnection, PgRow};
 use uuid::Uuid;
 
 use super::agents::map_session;
@@ -31,7 +30,7 @@ use crate::agent_repo::{
     batch_content_cols_and_payload_rows, batch_preview_col_values, content_col_and_payload_rows,
     decode_last_tool_use_col, decode_preview_col, inferred_import_origin, last_tool_use_col_value,
     normalize_compound_model, preview_col_value, OwnedBatchMessage, PreparedContent,
-    SESSION_COLUMNS,
+    MESSAGE_PREVIEW_METADATA_MAX_BYTES, SESSION_COLUMNS,
 };
 use crate::message_payload::{
     self as payload, KIND_THUMBNAILS, KIND_TOOL_RESULT_OUTPUT, KIND_TOOL_RESULT_OUTPUT_REPLAY,
@@ -305,23 +304,6 @@ async fn update_session_previews(
 }
 
 impl PgStore {
-    /// A read-only transaction with one snapshot for all its statements.
-    async fn begin_read_snapshot(&self) -> Result<Transaction<'static, Postgres>> {
-        let mut tx = self
-            .pool
-            .begin_with("BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-            .await
-            .map_err(db)?;
-        if self.options.rls_guard {
-            sqlx::query("SELECT set_config('intent.tenant_id', $1, true)")
-                .bind(self.tenant())
-                .execute(&mut *tx)
-                .await
-                .map_err(db)?;
-        }
-        Ok(tx)
-    }
-
     pub async fn search_agent_messages_fts(
         &self,
         match_expr: &str,
@@ -335,7 +317,7 @@ impl PgStore {
             return Ok(Vec::new());
         };
         let sql = format!(
-            "SELECT m.id AS message_id, m.agent_id, m.role, m.content, m.created_at, \
+            "SELECT m.id AS message_id, m.agent_id, m.role, m.content, m.metadata, m.created_at, \
                     s.workspace_id, s.name AS agent_name, top.adjusted_rank \
              FROM (SELECT r.id, r.row_seq, \
                      (-ts_rank(r.search_tsv, q.query) \
@@ -378,6 +360,9 @@ impl PgStore {
                         Error::Internal(format!("decode message content failed: {e}"))
                     })?;
                 Ok(MessageFtsMatch {
+                    metadata: col::<Option<String>>(row, "metadata")?
+                        .filter(|raw| raw.len() <= MESSAGE_PREVIEW_METADATA_MAX_BYTES)
+                        .and_then(|raw| serde_json::from_str(&raw).ok()),
                     message_id: col(row, "message_id")?,
                     agent_id: col(row, "agent_id")?,
                     workspace_id: col(row, "workspace_id")?,

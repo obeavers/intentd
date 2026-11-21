@@ -20,10 +20,10 @@ that it exists or present it as ready for general use. Ordinary setup or permiss
 requirements do not, by themselves, make a supported feature experimental.
 
 Multiplayer is always on: there is no switch to enable or disable it, and opening an
-invitation link joins directly without an enable step. Desktop v2.334.5 and later
-show invitation prompts in the current app window; What’s New waits until those
-dialogs close. These fixes first shipped on alpha. On older desktop versions, check
-Home if a prompt does not appear while viewing another machine. Workspace sharing, guest roles,
+invitation link joins directly without an enable step. Invitation prompts appear in
+the current app window; What’s New waits until those dialogs close. Older desktop
+versions may differ: if a prompt does not appear while viewing another machine, check
+Home. Workspace sharing, guest roles,
 discussions, the People panel, and **Settings → Collaboration** are ready for users.
 Personal device pairing is still experimental; do not introduce it in routine answers
 about settings, devices, or mobile pairing.
@@ -31,9 +31,8 @@ Sharing needs the host owner's GitHub or GitLab account connected in **Settings 
 Connections**: without one, new invitation links cannot be created and unused links
 cannot be redeemed until it is reconnected. People who already joined keep access.
 
-Starting with desktop v2.343.2 (first released on alpha), invitation prompts and
-joined workspaces use a normal app window, outside the notch. Intent opens or
-restores one when needed. Development launches of these versions do not claim
+Invitation prompts and joined workspaces use a normal app window, outside the notch.
+Intent opens or restores one when needed. Development launches do not claim
 `intent://` links. If an older development instance claimed links, reopen installed
 Intent to let it reclaim registration.
 
@@ -148,7 +147,7 @@ readiness date or advise enabling the experiment for ordinary mobile setup.
 
 ## Inline visuals
 
-Intent desktop v2.253.0 and later can show interactive visuals directly in chat.
+Intent desktop can show interactive visuals directly in chat.
 Ask an agent to visualize an explanation, comparison or changing inputs, such as
 “visualize how seasons work.” The agent uses a self-contained `ws-block:html`
 fence and checks it with the browser `previewHtml` action before showing it.
@@ -186,6 +185,40 @@ returns a screenshot, content height and console messages at a chosen width and
 appearance, so the agent can correct the visual before it appears in chat.
 
 <!-- Sources: packages/cloudlands-fe/src/features/inline-html/{InlineHtmlPreview.svelte,inline-html-document.ts,inline-html-runtime.ts,inline-html-styles.ts}; packages/cloudlands-fe/static/inline-html-sandbox.html; packages/cloudlands-fe/src/features/browser/main/inline-html-preview-service.ts; packages/cloudlands-fe/src/lib/components/browser/BrowserViewportMenu.svelte; packages/intentd/crates/intent-acp/src/mcp_server/bindings/browser_docs/overview.md. Visual workflow, layout and theme rules adapted from T3 Code (MIT, see packages/intentd/NOTICE). -->
+
+## Act on the app with daemon calls
+
+Your default realm is the local backend: the daemon that owns this Assistant chat.
+To read or change anything the app can, prefer `ws.rpc` over the older `ws.app.*`
+wrappers:
+
+1. Call `ws.rpc.info()` for the daemon version and doc links, and
+   `ws.rpc.methods({ prefix })` for the methods it serves and their class.
+2. Read the version-pinned docs or source for a method's params before calling it.
+   Docs often show `intentd call <method> --params '<json>'`; that is the same call.
+   Use `ws.rpc.call`, never the CLI.
+3. Reads run at once. A change does not run until the user approves the card that
+   shows the exact params. For several changes (for example archiving 12 workspaces),
+   send one `ws.rpc.batch` so the user approves one card. Then end your turn: the
+   result arrives as a `proposal_resolved` notice with each call's status.
+4. Some methods are never available to you (credentials, access, approvals,
+   settings changes, raw terminal, browser and desktop control). Use the matching
+   `ws.*` tool, a settings proposal card, or tell the user where to do it.
+
+If the user rejects a card, nothing ran; do not resubmit it unless they ask.
+
+`ws.rpc` replaces these older wrappers: reading one workspace, reading MCP servers,
+settings and specialists, and `ws.crossWorkspace`. Calling one of them fails with the
+`ws.rpc` call to use instead.
+
+To work on the user's other machines, call `ws.rpc.backends()`: it lists every backend the
+user's desktop apps know, and which app can reach it now. Pass a backend's `id` as
+`{ backend }` to `ws.rpc.info`, `ws.rpc.methods`, `ws.rpc.call` or a batch item. Only call
+other backends when the user asks or agrees, and label every result by backend. When a
+backend is unreachable, name the machine the user should open (the `device` in its
+reporters) instead of dropping it.
+
+<!-- Sources: packages/intentd/crates/intent-acp/src/mcp_server/bindings/rpc.rs; packages/intentd/crates/intent-services/src/agent_rpc.rs; packages/intentd/crates/intent-transport/src/{agent_rpc.rs,catalog.rs}; packages/cloudlands-fe/src/lib/components/chat/proposals. -->
 
 ## Finding things
 
@@ -258,6 +291,14 @@ it off; a user who turned it off keeps it off.
 
 <!-- Sources (paths relative to packages/cloudlands-fe): src/lib/components/settings/ChatAppearanceSettings.svelte; src/store/renderer/slices/user-preferences/user-preferences-slice.ts (collapseToolRuns default); src/lib/components/chat/ChatContentLane.svelte; src/features/layout/tab-types/AgentViewSettingsDropdown.svelte. Test-build behavior pending its frontend release. -->
 
+When asked about **Collapse tool activity** on iOS, describe it as test-build
+behavior pending its mobile release. In an agent chat, use **More (…) → Collapse
+tool activity** to change the setting for chats on this device. It is on by default.
+Consecutive calls and thinking steps share one summary. Tap it to reveal the rows,
+then tap an individual call to see its details.
+
+<!-- Sources: packages/ios/Intent/Views/Conversation/Transcript/{ConversationView,ResponseGroupView,ToolCallView}.swift; packages/ios/Intent/Presentation/MessageBlockPartitioning.swift. -->
+
 When asked about the **Notch dock**, its switch is in
 **Settings → Appearance → Notch dock**. Starting with the desktop release that turns
 it on by default, the dock is on unless the user turned it off; a user who turned it
@@ -266,6 +307,23 @@ off keeps it off. The switch follows changes from Settings,
 including when viewing another machine.
 
 <!-- Sources (paths relative to packages/cloudlands-fe): src/lib/components/settings/DockLabSettings.svelte; src/main/dock-lab.ts; src/main/dock-window-menu.ts; src/main/window-backend.ts. Test-build behavior pending its frontend release. -->
+
+Starting with the desktop release that expands the Notch workspace list, the dock
+keeps your three most recent human conversations visible when available, even if
+all are more than 24 hours old. **Show older** expands the list to show up to five
+workspace rows when there is room; scroll to reach the rest.
+
+<!-- Sources (paths relative to packages/cloudlands-fe): src/store/renderer/slices/hud/hud-selectors.ts; src/features/hud/components/{AdaptiveDockShell.svelte,DockOverview.svelte,dock-shell-geometry.ts}. -->
+
+Starting with the desktop release that enables capture editing by default, stopping
+a screen recording from the Notch dock opens the capture editor. Click a finished
+recording tile in the dock composer to reopen it. Screenshot tiles and their **Edit**
+control open the screenshot editor. **Save changes** keeps edits with the draft;
+**Attach** returns the capture to the composer. Neither sends the message: use the
+composer's send action when ready. Some older recordings can be played in the editor
+but cannot be edited; follow the editor's availability message.
+
+<!-- Sources (paths relative to packages/cloudlands-fe): src/features/hud/media-editor/open-capture-editor.ts; src/features/hud/composer/dock-composer-controller.ts; src/features/hud/components/DockComposerAttachments.svelte; src/features/hud/media-editor/{DockCaptureEditorShell.svelte,recording/DockRecordingEditor.svelte}; src/store/renderer/slices/dock-conversation/sagas/dock-evidence-saga.ts. -->
 
 When the user asks the Assistant to change a setting, `ws.app.settings.propose` shows a
 change card the user applies or discards; the card can be undone. It accepts only
@@ -380,28 +438,30 @@ screenshots of the rendered result. Product Manager never edits code: it asks
 clarifying questions, explores the code, and writes the spec in the workspace **Spec**
 note. A second Product Manager critiques the spec; after you approve it, Product
 Manager starts a top-level Developer to implement it (this uses **Top-level agent
-spawning & retirement**, on by default). Maintenance Coordinator keeps a steady
+spawning & retirement**, on by default). Maintainer keeps a steady
 pipeline of small maintenance PRs (bugs and issues, dependency and security alerts,
 CI failures and flaky tests), each reviewed and green; it never merges without the
 user's explicit permission. A new harness version
 applies to new sessions; existing sessions keep their captured behavior, and
 custom specialist instructions can override the defaults.
 
-<!-- Sources: packages/intentd/crates/intent-services/resources/specialists/{v3.8,v3.9,v3.10}/; packages/intentd/crates/intent-services/src/{specialists.rs,harness/v3_8.rs,harness/v3_9.rs,harness/v3_10.rs,harness/v3_12.rs}. -->
+<!-- Sources: packages/intentd/crates/intent-services/resources/specialists/{v3.8,v3.9,v3.10,v3.15}/; packages/intentd/crates/intent-services/src/{specialists.rs,harness/v3_8.rs,harness/v3_9.rs,harness/v3_10.rs,harness/v3_12.rs,harness/v3_15.rs}. -->
 
 <!-- Sources (paths relative to packages/cloudlands-fe): src/lib/components/settings/agent-feature-definitions.ts; src/lib/components/chat/secrets/SecretRequestCards.svelte; src/routes/(app)/settings/+page.svelte (Agent defaults Advanced disclosure). Daemon: packages/intentd/crates/intent-acp/src/mcp_server/bindings/secret.rs. -->
 
 **Secret requests.** Off by default. Open **Agent defaults**
 (`/settings?tab=agent-behavior#global-instructions`), expand **Advanced** if it is shown,
-and turn on **Secret requests** under **Agent features**; **Host command execution**
-must also be on. It applies to top-level workspace agents created afterwards, not to
-sub-agents, background hooks or Assistant chat. When such an agent asks for a secret such as an API key, a masked
-card appears above the message box after its turn ends; **Hide** collapses it to a
-"Secret requested" chip, and the user can provide or dismiss it. The value is not
-put in the chat: Intent holds it in daemon memory and passes it only to that agent's
+and turn on **Secret requests**, directly under **Host command execution** in **Agent
+features**; it stays off and unavailable while Host command execution is off. It applies
+to top-level workspace agents created afterwards, not to sub-agents, background hooks or
+Assistant chat. When such an agent asks for a secret such as an API key, a "Secret
+requested" card with a masked field appears above the message box after its turn ends.
+**Provide** sends the value; **Skip** declines at once and tells the agent. The down arrow
+(Hide) collapses the card to a chip without losing a typed value. The value is not put in
+the chat: Intent holds it in daemon memory and passes it only to that agent's
 `ws.host.exec` commands that name it, redacting exact copies from their output. It is
-dropped when the daemon restarts, the agent is deleted or retired, or its workspace
-is archived; the agent then has to ask again.
+dropped when the daemon restarts, the agent is deleted or retired, or its workspace is
+archived; the agent then has to ask again.
 
 **Disable a provider.** In **Settings → Providers**, choose **Disable** from its
 ⋯ menu, including for the default provider or one used by saved models or
@@ -430,6 +490,17 @@ Intent would send to the system browser (sign-in and help links, "open externall
 links from the terminal drawer) opens in a browser panel of the workspace shown in the
 current window instead. With no workspace open, it opens in a small sign-in window.
 Other link types, such as `mailto:`, are unchanged.
+
+<!-- Free OpenCode and npm runtimes: packages/cloudlands-fe/src/features/onboarding/utils/order-onboarding-providers.ts; packages/cloudlands-fe/src/features/onboarding/messages/{AgentGrid,ProviderCard}.svelte; packages/cloudlands-fe/src/store/renderer/seeders/provider-status-bridge-seeder.ts; packages/cloudlands-fe/src/shared/provider-visibility.ts; packages/intentd/crates/intent-services/src/{provider_cli_launch,installed_cli,provider_auth}.rs; packages/intentd/crates/intent-services/src/provider_models/parse.rs; packages/intentd/crates/intent-providers/src/config.rs. -->
+Pending release: OpenCode, Claude Code, Codex and Grok need no install when Node.js
+is present (Auggie too, once enabled; see Auggie visibility below). Without their CLI, Intent runs them from npm: through npx, or for
+Claude Code and Codex through Intent's own bundled copy, downloaded at the first launch.
+Cursor, Antigravity, Pi and Unsloth still need their own install. An
+installed CLI is always used first, with its version checks and update prompts. A card
+running from npm shows **Log in**, which runs the login command through npx. OpenCode's
+free models need no account, so when onboarding finds no other provider installed,
+OpenCode comes first with a **Free** label and is selected. Its default model is a free
+one whose provider keeps no prompts. Free models change over time and have usage limits.
 
 <!-- Auggie visibility: packages/cloudlands-fe/src/shared/provider-visibility.ts; packages/cloudlands-fe/src/features/onboarding/messages/AgentGrid.svelte; packages/cloudlands-fe/src/store/renderer/slices/provider-catalog/workspace-catalog-selectors.ts. -->
 Auggie appears in provider lists, including onboarding, only when its CLI is
@@ -536,6 +607,9 @@ If connected elsewhere, use **Settings → Machines**, then the local machine's
 **Connect** action, and return to **Mobile**. The QR controls remain visible but
 disabled when **Enable Remote Access** is off, data is loading, or no running listener
 port is available. Explain the required enablement; do not silently change it.
+Turning on **Enable Remote Access** also turns on the Tailcat tunnel and keeps listening on
+loopback only, unless the user chose other networks under **Advanced → Available Networks**
+before; those choices, tunnel included, are kept.
 For a generation error, inspect the displayed connection/listener error. TLS and
 tunnel switches are not visibility requirements: do not suggest toggling them to
 reveal the controls. Local pairing grants access to that machine; do not offer it
@@ -628,7 +702,14 @@ Switching a machine to orchestrator removes it from the backends that used
 it to run agents; pair with it again to use it as a backend. Homes are part of
 orchestrator mode: on an orchestrator a git workspace
 gets a **home**, a machine that holds its files, terminals and scripts, shown as
-**Home: <machine>** under the workspace title (hover it for the last backup). When the
+**Home: <machine>** under the workspace title (hover it for the last backup). Right after
+a workspace whose home is a paired machine is created, a banner shows **Setting up home on
+<machine>…** with its step (**Preparing checkout**, then **Running setup**) until the home
+is ready. **Couldn't set up home on <machine>** means the checkout failed (with the
+machine's reason when it gives one); Intent tries again when the machine reconnects, or use
+**Move home…**. **Setup script failed on <machine>** shows the exit code or a timeout;
+files, terminals and scripts still work. **Show output** shows the checkout and setup
+output, and the X dismisses a failure. When the
 home has been offline for a minute, a banner in the workspace and a **Home unavailable**
 marker on its Home card say so: chats, notes and script logs keep working, and file, diff
 and terminal panels show the reason instead. **Wait** tries to reconnect it. **Move home…**
@@ -644,7 +725,7 @@ was deleted while paused is rebuilt from its last backup at its next use, with a
 the workspace. While the home is unavailable, moving or starting, **Start** and **Restart**
 for scripts are off (hover one for the reason) and **Stop** still works; a file that could
 not open because of the home shows that reason and opens again once the home is back.
-<!-- Sources: packages/cloudlands-fe/src/features/workspace-home/{workspace-home.ts,workspace-home-copy.ts,workspace-home-saga.ts,components/MoveHomeDialog.svelte,components/WorkspaceHomeBanner.svelte}; packages/cloudlands-fe/src/features/layout/tab-types/FileTabType.svelte; packages/intentd/crates/intent-svc-remote/src/{home_move.rs,cloud/home.rs}. -->
+<!-- Sources: packages/cloudlands-fe/src/features/workspace-home/{workspace-home.ts,workspace-home-copy.ts,workspace-home-saga.ts,components/MoveHomeDialog.svelte,components/WorkspaceHomeBanner.svelte,components/WorkspaceHomeBannerHost.svelte}; packages/cloudlands-fe/messages/en.json; packages/cloudlands-fe/src/features/layout/tab-types/FileTabType.svelte; packages/intentd/crates/intent-services/src/home_setup.rs; packages/intentd/crates/intent-svc-remote/src/{home_move.rs,cloud/home.rs,homes.rs}. -->
 Agents see each machine's name and
 platform, and look up its providers, sign-in status and models when they need them.
 A Default with **Use on remote machines** turned on in **Settings → Providers** is
@@ -661,15 +742,19 @@ notice in the chat.
 <!-- Labs (remote agents): describe only when the user asks about cloud machines,
 and say it is Labs. The backend can start its own machines from a saved cloud entry:
 an E2B entry (API key) starts a sandbox, a Northflank entry (API token and project id)
-starts a Northflank service with its own disk, and an Agent37 entry (API key) starts an
-Agent37 instance. Northflank machines offer sizes 2x4, 4x8 and 8x16; the region is the
+starts a Northflank service with its own disk, an Agent37 entry (API key) starts an
+Agent37 instance, and a Vercel entry (access token, team id and project id) starts a
+Vercel sandbox in that project. Northflank machines offer sizes 2x4, 4x8 and 8x16; the region is the
 project's. An Agent37 entry picks Standard (a sandbox, US only) or Full VM (its own
 kernel and Docker, about 2.5 times the price, in the US, the EU or Mumbai), sizes 2x4,
 4x8, 4x16 and 4x32, and a disk; when the region has no room, the start fails and says
-so, and nothing starts in another region. Cloud machines have no sign-in, so only a
+so, and nothing starts in another region. Vercel machines offer sizes 2x4, 4x8 and
+8x16 (larger sizes need a Vercel plan that allows them) and run in the project's region;
+Vercel ends a session after the plan's longest session (24 hours on Pro, 45 minutes on
+Hobby), so the backend stops and resumes such a machine when it is idle. Cloud machines have no sign-in, so only a
 profile or Default marked for remote machines that sends an API key runs there. An
 idle cloud machine pauses. A paused E2B sandbox resumes with its memory, and so does
-an Agent37 machine usually; a paused Northflank machine, or an Agent37 machine that
+an Agent37 machine usually; a paused Northflank or Vercel machine, or an Agent37 machine that
 Agent37 had to start again, resumes from its disk only: the checkout, uncommitted changes and
 home folder stay, while running processes, terminals and scripts stop, and software
 installed outside the home folder may be gone. The agent is told this at its next turn.
@@ -692,7 +777,11 @@ explaining missing work or changing host settings. **Mobile** follows the active
 connection and its permissions; do not describe a remote connection's QR as belonging
 to the local desktop. To pair the local machine, connect to it first. For intentd
 running in WSL on the same Windows PC, add a machine with host `localhost`;
-`intentd pair --host localhost` in WSL prints the port and token. Enabling access,
+`intentd pair --host localhost` in WSL prints the port and token. When `intentd pair`
+turns access on, it asks whether to turn on the Tailcat tunnel, then which addresses to
+accept connections on; `--yes` and the installers' unattended runs take the defaults. A
+first install defaults to the tunnel on and loopback only; re-running the installer keeps
+the tunnel and addresses already saved. Enabling access,
 changing listening addresses, and configuring a tunnel are separate choices from
 displaying pairing information. Read current state and respect the user's requested scope.
 
@@ -892,7 +981,7 @@ watches, its last update on GitHub as of the watch's latest check). Home's short
 keeps unfinished PRs ahead of merged or closed ones; the **+N** count in list view
 includes the other linked PRs, even when their details are not loaded.
 
-<!-- Sources: packages/cloudlands-fe/src/lib/components/workspace/{CompactWorkspaceInitializer,MultiSelectTabbedSidebar,CreateAgentSection}.svelte; packages/cloudlands-fe/src/lib/components/workspace/initializer/{InitialAgentPicker,RepoSelector,BranchSelector,SetupScriptPicker,SetupScriptEditor,StartOnPicker,WorkspaceCreateButton,CreateButtonProgress}.svelte; packages/cloudlands-fe/src/lib/components/modals/SetupScriptModal.svelte; packages/cloudlands-fe/src/store/renderer/slices/workspace-initializer/utils/agent-settings-repo-key.ts; packages/cloudlands-fe/src/features/onboarding/messages/ProjectPickerMessage.svelte; packages/cloudlands-fe/src/features/hardware-console/voice/transcription-service.ts; packages/cloudlands-fe/messages/en.json. -->
+<!-- Sources: packages/cloudlands-fe/src/lib/components/workspace/{CompactWorkspaceInitializer,MultiSelectTabbedSidebar,CreateAgentSection}.svelte; packages/cloudlands-fe/src/lib/components/workspace/initializer/{InitialAgentPicker,RepoSelector,BranchSelector,SetupScriptPicker,SetupScriptEditor,StartOnPicker,WorkspaceCreateButton,CreateButtonProgress}.svelte; packages/cloudlands-fe/src/lib/components/modals/SetupScriptModal.svelte; packages/cloudlands-fe/src/store/renderer/slices/workspace-initializer/utils/agent-settings-repo-key.ts; packages/cloudlands-fe/src/features/onboarding/messages/ProjectPickerMessage.svelte; packages/cloudlands-fe/src/features/hardware-console/voice/transcription-service.ts; packages/cloudlands-fe/src/features/voice/components/{DictationStopButton,DictationMeter}.svelte; packages/cloudlands-fe/messages/en.json. -->
 
 <!-- The searchable Machines picker for initial-agent placement is Labs-only;
 do not list it among the normal workspace settings below. -->
@@ -905,6 +994,10 @@ truncate to fit. The settings beside the prompt (below it on narrow
 windows) are **Codebase**, **Branch**, **Setup script**, **Initial agent**, and **Model**.
 Use **+** below the prompt to add context, the paperclip to attach files, or the
 microphone to dictate. These controls are grouped on the left.
+While you dictate, the microphone becomes an orange pill with a stop icon, the
+elapsed time, and bars that move with your voice. If the bars stay flat while
+you speak, check your microphone. Click the pill to stop. The chat box microphone and the
+dock's microphone work the same way.
 **Transcribing…** stays visible while dictation is transcribed. If transcription
 fails, Intent retries up to three times and shows a toast for each retry before
 it reports the failure; a missing or rejected provider key fails right away.
@@ -986,7 +1079,7 @@ a message says it no longer exists.
 
 <!-- Labs (remote agents): describe only when the user asks about remote agents,
 and say it is Labs. The card's **Start on** defaults to where the proposing agent
-runs: the backend, its remote machine, or a new cloud machine (E2B, Northflank or Agent37)
+runs: the backend, its remote machine, or a new cloud machine (E2B, Northflank, Agent37 or Vercel)
 from the same entry.
 The user can change it before **Create workspace**; an offline machine shows a
 warning. An agent applying its own proposal uses that default, and a machine
@@ -1007,22 +1100,25 @@ Home. With no open workspace tabs, these shortcuts do nothing. Customize them in
 
 <!-- Sources (paths relative to packages/cloudlands-fe): src/features/recent-agents/RecentAgentSwitcher.svelte; src/features/recent-agents/RecentAgentCard.svelte; src/features/recent-agents/main/recent-agents.ipc.ts; src/shared/recent-agents.ts; src/shared/keyboard-shortcut-bindings.ts; src/store/renderer/slices/recent-agents/sagas/recent-agents-saga.ts. -->
 
-Pending frontend release (not in current builds): to jump between agents, hold
-**Option+Tab** on macOS or **Super+Tab** on Linux
-(on Intent OS the Mac Command key is Super). Windows has no default because it
-owns Alt+Tab and Win+Tab; bind one in settings. Intent shows the agents the user
-opened on this device, newest first, across every machine. A quick press and
-release returns to the previous agent. While holding the modifier, press Tab
-again to move (Shift moves back), release to open the selected agent, or press
-Esc to cancel. Each card shows the agent, its workspace, its machine and when it
-was opened; agents on the window's own machine also show whether they are
-working or need attention. A dimmed card is on a machine that is not connected:
-choosing it connects, opens that machine's window and then the agent. The list
-keeps the 30 most recent agents, is shared by every window, is not synced to
-other devices, and drops agents of a forgotten machine or of a deleted or
-archived workspace. It works in the composer, terminals and the browser panel.
-Rebind it as **Switch to Recent Agent** in **Settings → Input and shortcuts →
-Keyboard shortcuts**.
+Pending frontend release (not in current builds): to jump between agents,
+browser tabs and terminal tabs, hold **Option+Tab** on macOS or **Super+Tab** on
+Linux (on Intent OS the Mac Command key is Super). Windows has no default because
+it owns Alt+Tab and Win+Tab; bind one in settings. Intent shows the agents,
+browser tabs and panel terminals the user focused on this device in one list,
+newest first, across every machine. A quick press and release returns to the
+previous item. While holding the modifier, press Tab again to move (Shift moves
+back), release to open the selected item, or press Esc to cancel. Each card shows
+the agent, page or terminal name, its workspace, its machine and when it was
+opened; agents on the window's own machine also show whether they are working or
+need attention. A dimmed card is on a machine that is not connected: choosing it
+connects, opens that machine's window and then the item. The list keeps the 30
+most recent items, is shared by every window, is not synced to other devices,
+and drops items of a forgotten machine, of a deleted or archived workspace, and
+browser or terminal tabs that were closed. A closed browser tab that an agent
+opened stays hidden in the background, so it stays listed and choosing it
+brings it back. Terminals in the terminal drawer are not listed. It works in the composer, terminals and the browser panel. Rebind it
+as **Switch to Recent Tab** in **Settings → Input and shortcuts → Keyboard
+shortcuts**.
 
 <!-- Labs (tab groups): describe only when explicitly asked about tab groups or
 when developing or testing them, and say they are Labs. Enable Tab groups in
@@ -1162,7 +1258,7 @@ terminal being open. If setup stays running, inspect its last output before
 retrying. Include that output, the Intent version, and the operating system when
 reporting the problem.
 
-<!-- Sources (paths relative to packages/cloudlands-fe): src/lib/components/terminal/QuakeTerminalOverlay.svelte; src/features/layout/tab-types/TerminalTabType.svelte; src/lib/components/workspace/WorkspaceShellList.svelte; src/features/scripts/confirm-script-deletion.ts; src/store/renderer/slices/scripts/scripts-selectors.ts; src/lib/components/chat/EventSubscriptionsCard.svelte; messages/en.json. Backend sources: packages/intentd/crates/intent-svc-runtime/src/script_monitor.rs; packages/intentd/crates/intentd/src/main.rs (staged update restart watcher). -->
+<!-- Sources (paths relative to packages/cloudlands-fe): src/lib/components/terminal/QuakeTerminalOverlay.svelte; src/features/layout/tab-types/TerminalTabType.svelte; src/lib/components/workspace/WorkspaceShellList.svelte (Start automatically toggle, ordering); src/features/scripts/confirm-script-deletion.ts; src/store/renderer/slices/scripts/scripts-selectors.ts; src/lib/components/chat/EventSubscriptionsCard.svelte; messages/en.json. Backend sources: packages/intentd/crates/intent-svc-runtime/src/script_monitor.rs; packages/intentd/crates/intent-svc-runtime/src/script_ops.rs (boot restore of running services); packages/intentd/crates/intent-svc-runtime/src/script_ops/home_runs.rs (autoStart); packages/intentd/crates/intent-svc-runtime/src/script_ops/machine_runs.rs (remote agents' runs, stopped on archive); packages/intentd/crates/intentd/src/main.rs (staged update restart watcher). -->
 
 Script lists show unarchived scripts; use **Load more** when offered to see the
 next page. Open a script to view available output; use **Edit command** to inspect
@@ -1175,6 +1271,20 @@ only active monitors and disappear when they finish, trigger, expire, or are
 cancelled; completion notices remain in the agent conversation. An automatic
 background update waits for running one-off (command) scripts to finish, for up
 to 90 minutes, before restarting; long-running service scripts do not delay it.
+A service script that was running when Intent stopped starts again when Intent
+restarts. To have a service start whenever Intent starts, open its **…** menu in the
+sidebar **Scripts** list and turn on **Start automatically**; it does not stop a
+running service. Those services are listed first, with their names in color and followed by a lightning bolt icon. They
+start even if you stopped them, so turn **Start automatically** off to keep one
+stopped. Other services you stopped stay stopped. Nothing starts in an archived
+workspace.
+
+Scripts with **Start automatically** on (also set by agents, or under `scripts` in
+the repository's `.intent/config.json`) also start when workspace setup finishes
+(not after a failed setup script) and when the workspace is unarchived, but not in
+a workspace being deleted. A running script is not started twice. Archiving a
+workspace stops all of its running scripts, including those remote agents started
+on their machines.
 
 To delete a saved script, open its **…** menu in the sidebar **Scripts** list or in
 the script panel and choose **Delete script**, or use **Delete script** beside its
@@ -1305,9 +1415,10 @@ changing the filter, repository or tab also clears it.
 
 Right-click a repository or local folder in the Home sidebar and choose **New
 workspace** to start one there. For a GitHub repository, **Hide** removes it from the
-sidebar. For a local folder, **Delete** (app v2.338.0 and later) removes it from Intent's
-folder list (files on disk stay) and moves it to **Hidden** if it still has
-workspaces; earlier versions and collaborators see **Hide** instead. A hidden
+sidebar. For a local folder, **Delete** removes it from Intent's folder list (files on
+disk stay). A folder that still has workspaces also leaves the sidebar, keeps its
+workspaces under **All repos**, and comes back when the folder is added again or gets a
+new workspace. Collaborators see **Hide** instead; older app versions may differ. A hidden
 repository's workspaces still show under **All repos**. Hidden repositories move to a
 collapsed **Hidden** section at the bottom of the sidebar; right-click one there and
 choose **Unhide** to bring it back. A hidden repository also comes back when a new
@@ -1347,8 +1458,7 @@ grouping choices keep their behavior.
 
 <!-- Sources (paths relative to packages/cloudlands-fe): src/features/home/{HomePage,HomeWorkspaceList,HomeWorkspaceBoard}.svelte; src/features/home/{home-workspace-menu,home-workspaces-persistence,home-workspaces-saga,home-set-aside-shortcut}.ts. -->
 
-**Set aside** is available in alpha builds starting with v2.262.0. Use **Set aside**
-on a Home workspace row, card or menu. List view moves it into a collapsed
+Use **Set aside** on a Home workspace row, card or menu. List view moves it into a collapsed
 **Set aside** section; board view shows it in the **Set aside** column on the right.
 The column stays hidden when empty and appears while dragging a card so you can
 drop it there to set it aside. Choose **Bring back** on its row or card, or use the
@@ -1498,26 +1608,28 @@ selected, even if another conversation, file, or note is open. Notifications for
 other workspaces can still appear. The workspace's agent status and conversation
 notices remain available.
 
-<!-- Sources (paths relative to packages/cloudlands-fe): src/lib/components/chat/{StreamingStatus,TurnFailureNotice,FailureDetails,QueuedMessageList,QueuedMessageActions,ChatPanel}.svelte; messages/en.json. -->
+<!-- Sources (paths relative to packages/cloudlands-fe): src/lib/components/chat/{StreamingStatus,TurnFailureNotice,FailureDetails,QueuedMessageList,QueuedMessageActions,ChatPanel}.svelte; src/lib/components/chat/failure-transcript.ts; src/shared/provider-catalog.ts; src/store/renderer/slices/agent-availability/sagas/provider-availability-saga.ts; src/lib/components/ui/toast/AgentFailureToast.svelte; messages/en.json. -->
 
-In the existing conversation, **Couldn't complete this response** summarizes a
-stopped response. Open **Details** to inspect the technical error, then **Copy
-details** to copy it. **Needs attention** means action is needed; choose **Retry**
-when offered. **Queued** means a message is in the queue, not that a retry is
-scheduled. Inspect that message and use its available controls before sending
-another copy. Active work keeps its normal **Thinking** or activity status; do not
-infer a retry from that status alone. Controls depend on the conversation's state
-and your access.
+In the existing conversation, the current failure shows one card: **Response
+failed** with the first line of the error, or **Sign-in required** with the CLI
+login command to copy. For an agent on the daemon host, **Run in terminal** (the
+terminal icon beside the command) runs it in Intent's terminal; the failure
+notification offers the same icon. Open **Details** to inspect the full technical
+error, then **Copy details** to copy it. Choose **Retry** when offered. A failed message stays
+in the queue below the card; a retry is not scheduled on its own. Inspect that
+message and use its available controls before sending another copy. Active work
+keeps its normal **Thinking** or activity status; do not infer a retry from that
+status alone. Controls depend on the conversation's state and your access.
 
 For one queued message, use **Edit**, **Send now**, or **Remove** in the queue
 header. While editing, **Save** and **Cancel** stay beside the message. With
 several queued messages, each message has its own controls; the header offers bulk actions.
 
-Earlier failures may appear as **1 recorded failure** or **N recorded failures**.
-Expand that label to inspect the saved errors and timestamps and use **Copy
-details**. These are counts of recorded notices, not total attempts or proof that
-all failures belong to the same request. A historical notice alone does not mean
-the agent is still failing; check the current status and latest response.
+Earlier failures appear in place as a quiet **Response failed** row. Expand it to
+inspect the saved errors and timestamps and use **Copy details**. Consecutive
+failures share one row; it does not count attempts or prove that they belong to
+the same request. A historical row alone does not mean the agent is still failing;
+check the current status and latest response.
 
 <!-- Sources: packages/intentd/crates/intent-services/src/agent_ops.rs (agent_resolve_blocker_op, clear_daemon_stall_blocker_after_success); packages/cloudlands-fe/src/shared/utils/agent-attention.ts. -->
 
@@ -1653,7 +1765,9 @@ tab to open its default
 content: **Agents** opens the main agent, **Context** the Spec, **Changes** the
 changes list, and **Files** a root README (otherwise the first root file, then a
 file inside a folder). **Browsers** opens the first browser in its list; **Shells**
-opens the first terminal, creating one when none exists. A click in the collapsed
+opens the first terminal, creating one when none exists. A grey dot on **Browsers**
+means the workspace has open browser tabs; on **Shells**, open terminals or a running
+script. A click in the collapsed
 rail opens the section's default content immediately. With one pane selected,
 arrow keys select a section without opening main content. With multiple panes
 selected, arrow keys move focus without changing the selection. The focus ring

@@ -66,6 +66,8 @@ mod pr_monitors;
 mod presence_focus;
 #[path = "postgres_backend/principals.rs"]
 mod principals;
+#[path = "postgres_backend/read_snapshots.rs"]
+mod read_snapshots;
 #[path = "postgres_backend/repositories.rs"]
 mod repositories;
 #[path = "postgres_backend/script_monitors.rs"]
@@ -80,6 +82,10 @@ mod tracer_evidence;
 mod usage_metrics;
 #[path = "postgres_backend/workspaces.rs"]
 mod workspaces;
+#[path = "postgres_backend/writer_lock.rs"]
+mod writer_lock;
+#[path = "support/writer_race.rs"]
+mod writer_race;
 
 use harness::{empty_db, exec, open, open_trapped, open_with, test_db, trapped_db};
 use intent_store::postgres::{self, TenantId};

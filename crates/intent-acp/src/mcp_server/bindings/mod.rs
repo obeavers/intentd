@@ -35,6 +35,7 @@ pub(crate) mod mcp;
 pub(crate) mod note;
 pub(crate) mod pr;
 pub(crate) mod primitive;
+pub(crate) mod rpc;
 pub(crate) mod script;
 pub(crate) mod search;
 pub(crate) mod secret;
@@ -153,6 +154,30 @@ pub fn prelude_for_workspace(
     workspace_id: &WorkspaceId,
     machine_models: bool,
 ) -> String {
+    assemble_prelude(features, is_sub_agent, workspace_id, machine_models, false)
+}
+
+/// [`prelude_for_workspace`] for an agent's own `workspace_api` bridge: the
+/// top-level Assistant also gets the stubs for bindings `ws.rpc` replaced
+/// (`rpc::REPLACED_BY_RPC`). Hooks keep the plain prelude, so saved hook code
+/// that calls an older binding keeps working.
+#[must_use]
+pub(crate) fn prelude_for_agent_bridge(
+    features: &AgentFeaturesSettings,
+    is_sub_agent: bool,
+    workspace_id: &WorkspaceId,
+    machine_models: bool,
+) -> String {
+    assemble_prelude(features, is_sub_agent, workspace_id, machine_models, true)
+}
+
+fn assemble_prelude(
+    features: &AgentFeaturesSettings,
+    is_sub_agent: bool,
+    workspace_id: &WorkspaceId,
+    machine_models: bool,
+    retire_replaced: bool,
+) -> String {
     let chief_features;
     let features = if workspace_id.is_chief() && features.secret_requests {
         chief_features = AgentFeaturesSettings {
@@ -170,6 +195,12 @@ pub fn prelude_for_workspace(
     if workspace_id.is_chief() {
         prelude.push_str(app::mcp::PRELUDE);
         prelude.push_str(app::chats::PRELUDE);
+        if !is_sub_agent {
+            prelude.push_str(rpc::PRELUDE);
+            if retire_replaced {
+                prelude.push_str(&rpc::replaced_prelude());
+            }
+        }
     }
     prelude.push_str(suggest::guard_prelude());
     prelude
@@ -521,6 +552,19 @@ async fn dispatch_binding(
         return file::dispatch(api, workspace_id, caller_agent_id, rest, args)
             .await
             .map(Some);
+    }
+    if let Some(rest) = method.strip_prefix("rpc.") {
+        return rpc::dispatch(
+            api,
+            workspace_id,
+            caller_agent_id,
+            is_sub_agent,
+            eval_budget,
+            rest,
+            args,
+        )
+        .await
+        .map(Some);
     }
     if let Some(rest) = method.strip_prefix("app.") {
         return app::try_dispatch(
