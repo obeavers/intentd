@@ -58,6 +58,7 @@
 #![cfg(unix)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -665,53 +666,53 @@ fn redact_new_commits(s: &str, new_commits: &[String]) -> String {
     })
 }
 
-fn redact_uuids(s: &str) -> String {
-    let bytes = s.as_bytes();
+fn redact_uuids(input: &str) -> String {
+    let bytes = input.as_bytes();
     let groups = [8usize, 4, 4, 4, 12];
     let mut seen: Vec<String> = Vec::new();
-    let mut out = String::with_capacity(s.len());
-    let mut i = 0;
-    'scan: while i < bytes.len() {
-        let boundary = i == 0 || !bytes[i - 1].is_ascii_alphanumeric();
+    let mut out = String::with_capacity(input.len());
+    let mut cursor = 0;
+    'scan: while cursor < bytes.len() {
+        let boundary = cursor == 0 || !bytes[cursor - 1].is_ascii_alphanumeric();
         if boundary {
-            let mut j = i;
-            let mut ok = true;
-            for (g, len) in groups.iter().enumerate() {
-                if g > 0 {
-                    if bytes.get(j) != Some(&b'-') {
-                        ok = false;
+            let mut end = cursor;
+            let mut valid = true;
+            for (group, len) in groups.iter().enumerate() {
+                if group > 0 {
+                    if bytes.get(end) != Some(&b'-') {
+                        valid = false;
                         break;
                     }
-                    j += 1;
+                    end += 1;
                 }
                 for _ in 0..*len {
-                    if !bytes.get(j).copied().is_some_and(is_hex) {
-                        ok = false;
+                    if !bytes.get(end).copied().is_some_and(is_hex) {
+                        valid = false;
                         break;
                     }
-                    j += 1;
+                    end += 1;
                 }
-                if !ok {
+                if !valid {
                     break;
                 }
             }
-            if ok && (j == bytes.len() || !bytes[j].is_ascii_alphanumeric()) {
-                let u = &s[i..j];
-                let n = match seen.iter().position(|x| x == u) {
-                    Some(p) => p + 1,
-                    None => {
-                        seen.push(u.to_string());
+            if valid && (end == bytes.len() || !bytes[end].is_ascii_alphanumeric()) {
+                let uuid = &input[cursor..end];
+                let number =
+                    if let Some(position) = seen.iter().position(|seen_uuid| seen_uuid == uuid) {
+                        position + 1
+                    } else {
+                        seen.push(uuid.to_string());
                         seen.len()
-                    }
-                };
-                out.push_str(&format!("<UUID-{n}>"));
-                i = j;
+                    };
+                write!(out, "<UUID-{number}>").expect("format UUID redaction");
+                cursor = end;
                 continue 'scan;
             }
         }
-        let ch = s[i..].chars().next().expect("char");
+        let ch = input[cursor..].chars().next().expect("char");
         out.push(ch);
-        i += ch.len_utf8();
+        cursor += ch.len_utf8();
     }
     out
 }
@@ -1338,7 +1339,7 @@ fn cases() -> Vec<Case> {
             json!({ "workspaceId": WS, "prNumber": 1 })
         }),
         case("accept-changes.mergePR", "missing_pr_number", Clean, ws),
-        case("accept-changes.addRemote", "no_remote", Clean, |fx| {
+        case("accept-changes.addRemote", "no_remote", Clean, |_| {
             json!({ "workspaceId": WS, "remoteUrl": "https://forge.invalid/golden/repo.git" })
         })
         .prep(|fx| {
@@ -1454,17 +1455,19 @@ fn coverage_md(cases: &[Case], produced: &BTreeMap<String, String>) -> String {
             })
             .collect::<Vec<_>>()
             .join(", ");
-        md.push_str(&format!("| `{method}` | yes | {success} | {list} |\n"));
+        writeln!(md, "| `{method}` | yes | {success} | {list} |").expect("format coverage row");
     }
     let methods = vcs_methods();
-    md.push_str(&format!(
-        "\n{} dispatched methods in the four namespaces; {} have a golden.\n",
+    writeln!(
+        md,
+        "\n{} dispatched methods in the four namespaces; {} have a golden.",
         methods.len(),
         methods
             .iter()
             .filter(|m| by_method.contains_key(*m))
             .count()
-    ));
+    )
+    .expect("format coverage totals");
     md
 }
 
@@ -1530,7 +1533,11 @@ fn vcs_wire_goldens() {
         .map(|rd| {
             rd.filter_map(Result::ok)
                 .map(|e| e.file_name().to_string_lossy().into_owned())
-                .filter(|n| n.ends_with(".json"))
+                .filter(|name| {
+                    Path::new(name)
+                        .extension()
+                        .is_some_and(|extension| extension == "json")
+                })
                 .collect()
         })
         .unwrap_or_default();
